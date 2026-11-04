@@ -1,0 +1,11 @@
+{
+  "readyForPublicRegistration": false,
+  "unverified": [
+    "Complete external send-and-reply acceptance",
+    "SMTP and native JMAP MTA Hook enforcement and failure recovery",
+    "Turnstile production configuration",
+    "Full registration and password recovery fault-injection scenarios",
+    "Mobile, dark mode, keyboard and accessibility acceptance",
+    "Release-only clean installation, update, restore and load testing"
+  ]
+}

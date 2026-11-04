@@ -1,0 +1,38 @@
+{
+  "name": "@community-go/plugin-framework",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./navigation": "./src/navigation-contract.ts",
+    "./plugin": "./src/plugin.tsx",
+    "./preferences": "./src/preferences.tsx",
+    "./workspace": "./src/workspace.tsx",
+    "./workbench": "./src/workbench.tsx",
+    "./notifications": "./src/notifications.tsx",
+    "./commands": "./src/commands.tsx",
+    "./leave-confirm": "./src/leave-confirm.tsx",
+    "./schemas": "./src/schemas.ts",
+    "./schemas/runtime": "./src/schemas-runtime.ts",
+    "./target": "./src/target-index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@community-go/core": "workspace:*",
+    "@community-go/schemas": "workspace:*",
+    "@community-go/types": "workspace:*",
+    "react": "^19.2.8"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.2.7",
+    "jsdom": "^30.0.1",
+    "react-dom": "^19.2.8",
+    "vitest": "^4.1.11",
+    "zod": "^4.5.2"
+  }
+}

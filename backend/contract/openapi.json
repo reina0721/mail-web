@@ -1,0 +1,1628 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "mail-web",
+    "description": "",
+    "license": {
+      "name": ""
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/v1/account": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "profile",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "update_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/account/app-passwords": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "app_passwords",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "create_app_password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CredentialInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/account/app-passwords/{id}": {
+      "delete": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "delete_app_password",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/audit": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "audit",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/registration": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "get_settings",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "put_settings",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/tasks": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "tasks",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "users",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/users/{id}": {
+      "patch": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "update_user",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/attachments": {
+      "post": {
+        "tags": [
+          "mail"
+        ],
+        "operationId": "upload",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/attachments/{id}": {
+      "get": {
+        "tags": [
+          "mail"
+        ],
+        "operationId": "download",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": [],
+        "operationId": "login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Login"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Session established"
+          },
+          "401": {
+            "description": "Invalid credentials"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": [],
+        "operationId": "logout",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/password": {
+      "post": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "password",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PasswordInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/recovery": {
+      "post": {
+        "tags": [
+          "registration"
+        ],
+        "operationId": "recover",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Recovery"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "tags": [
+          "registration"
+        ],
+        "operationId": "register",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Register"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/session": {
+      "get": {
+        "tags": [],
+        "operationId": "session",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No active session"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sessions": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "sessions",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sessions/revoke-others": {
+      "post": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "revoke_others",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sessions/{id}": {
+      "delete": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "revoke_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/drafts": {
+      "post": {
+        "tags": [
+          "mail"
+        ],
+        "operationId": "save_draft",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/drafts/{id}": {
+      "delete": {
+        "tags": [
+          "mail"
+        ],
+        "operationId": "delete_draft",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "tags": [
+          "mail"
+        ],
+        "operationId": "events",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/health/ready": {
+      "get": {
+        "tags": [],
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          }
+        }
+      }
+    },
+    "/api/v1/mailboxes": {
+      "get": {
+        "tags": [],
+        "operationId": "mailboxes",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "mail"
+        ],
+        "operationId": "create_mailbox",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailboxInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/mailboxes/{id}": {
+      "delete": {
+        "tags": [
+          "mail"
+        ],
+        "operationId": "delete_mailbox",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "mail"
+        ],
+        "operationId": "rename_mailbox",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailboxInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/messages": {
+      "get": {
+        "tags": [],
+        "operationId": "messages",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/batch": {
+      "post": {
+        "tags": [
+          "mail"
+        ],
+        "operationId": "batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Batch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/messages/{id}": {
+      "get": {
+        "tags": [],
+        "operationId": "message",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          }
+        }
+      },
+      "patch": {
+        "tags": [],
+        "operationId": "update_message",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessagePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          }
+        }
+      }
+    },
+    "/api/v1/registration/availability": {
+      "get": {
+        "tags": [
+          "registration"
+        ],
+        "operationId": "availability",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/registration/challenges": {
+      "post": {
+        "tags": [
+          "registration"
+        ],
+        "operationId": "challenge",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChallengeInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/registration/policy": {
+      "get": {
+        "tags": [
+          "registration"
+        ],
+        "operationId": "public_policy",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/registration/verify": {
+      "post": {
+        "tags": [
+          "registration"
+        ],
+        "operationId": "verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/submissions": {
+      "post": {
+        "tags": [
+          "mail"
+        ],
+        "operationId": "send",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Send"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/submissions/{id}": {
+      "get": {
+        "tags": [
+          "mail"
+        ],
+        "operationId": "submission_status",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Attachment": {
+        "type": "object",
+        "required": [
+          "blob_id",
+          "name",
+          "type"
+        ],
+        "properties": {
+          "blob_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        }
+      },
+      "Batch": {
+        "type": "object",
+        "required": [
+          "ids"
+        ],
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mailbox": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "read": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "starred": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "ChallengeInput": {
+        "type": "object",
+        "required": [
+          "email",
+          "purpose",
+          "turnstile_token"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "turnstile_token": {
+            "type": "string"
+          }
+        }
+      },
+      "CredentialInput": {
+        "type": "object",
+        "required": [
+          "description"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "Draft": {
+        "type": "object",
+        "required": [
+          "to",
+          "cc",
+          "bcc",
+          "subject",
+          "text",
+          "attachments"
+        ],
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Attachment"
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cc": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "in_reply_to": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "references": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "subject": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "to": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "Login": {
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          }
+        }
+      },
+      "MailboxInput": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "MessagePatch": {
+        "type": "object",
+        "properties": {
+          "mailbox": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "read": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "starred": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "PasswordInput": {
+        "type": "object",
+        "required": [
+          "current_password",
+          "new_password"
+        ],
+        "properties": {
+          "current_password": {
+            "type": "string"
+          },
+          "new_password": {
+            "type": "string"
+          }
+        }
+      },
+      "ProfileInput": {
+        "type": "object",
+        "required": [
+          "display_name",
+          "language",
+          "theme"
+        ],
+        "properties": {
+          "display_name": {
+            "type": "string"
+          },
+          "language": {
+            "type": "string"
+          },
+          "theme": {
+            "type": "string"
+          }
+        }
+      },
+      "Recovery": {
+        "type": "object",
+        "required": [
+          "challenge_id",
+          "verification_token",
+          "password"
+        ],
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "password": {
+            "type": "string"
+          },
+          "verification_token": {
+            "type": "string"
+          }
+        }
+      },
+      "Register": {
+        "type": "object",
+        "required": [
+          "challenge_id",
+          "verification_token",
+          "name",
+          "password"
+        ],
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "verification_token": {
+            "type": "string"
+          }
+        }
+      },
+      "Send": {
+        "type": "object",
+        "required": [
+          "idempotency_key",
+          "draft"
+        ],
+        "properties": {
+          "draft": {
+            "$ref": "#/components/schemas/Draft"
+          },
+          "idempotency_key": {
+            "type": "string"
+          }
+        }
+      },
+      "SessionView": {
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "operator"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operator": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UserInput": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "quota_bytes",
+          "hourly_recipients",
+          "daily_recipients"
+        ],
+        "properties": {
+          "daily_recipients": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "hourly_recipients": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quota_bytes": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "VerifyInput": {
+        "type": "object",
+        "required": [
+          "challenge_id",
+          "code"
+        ],
+        "properties": {
+          "challenge_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

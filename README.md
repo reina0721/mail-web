@@ -84,4 +84,3 @@ API 契约由 Rust 类型及 Utoipa 注解生成，位于 `backend/contract/open
 前端基础包及架构门禁来自 `reina0721/console-web` 提交 `7a159d8908120f34e6444df932496cf1dc273349`。原项目未修改。未引入原项目的 Mock 认证配置或业务 Surface。邮箱与运营页面在 `frontend/apps/web/src/features`，App Router 固定页面位于 `src/app`。
 
 GitHub Actions 检查成功后，版本标签生成镜像归档、校验值及包含实际 SQLite 版本的清单。预发布版本明确标为开发预览；稳定版发布受到 `docs/acceptance.json` 门禁约束。
-

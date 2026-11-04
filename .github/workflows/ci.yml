@@ -1,0 +1,52 @@
+name: Validate and package
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: corepack enable && corepack prepare pnpm@10.22.0 --activate
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - run: node frontend/tooling/check-boundaries.mjs && node frontend/tooling/check-boundaries-fixtures.mjs
+      - run: pnpm --dir frontend typecheck && pnpm --dir frontend build
+      - run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
+      - run: cargo fmt --all -- --check && cargo test --locked --workspace && cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo run --locked -p mail-web -- --openapi > build-openapi.json && diff -u backend/contract/openapi.json build-openapi.json
+      - run: pnpm --dir frontend exec openapi-typescript ../backend/contract/openapi.json -o apps/web/src/lib/generated-api.ts && git diff --exit-code frontend/apps/web/src/lib/generated-api.ts
+      - run: for script in deploy/*.sh tooling/*.sh tests/*.sh; do sh -n "$script"; done
+      - run: docker build --platform linux/amd64 -t mail-web:ci .
+      - run: docker run --rm --pull never mail-web:ci --runtime-info
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce stable acceptance gate
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          case "$VERSION" in
+            *-*) echo 'Prerelease: production registration remains closed' ;;
+            *) jq -e '.readyForPublicRegistration == true' docs/acceptance.json ;;
+          esac
+      - run: docker build --platform linux/amd64 -t "mail-web:${GITHUB_REF_NAME#v}" .
+      - run: sh tooling/package-release.sh "$GITHUB_REF_NAME"
+      - name: Publish direct-download assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          directory="build/release/$GITHUB_REF_NAME"
+          case "$GITHUB_REF_NAME" in *-*) prerelease=--prerelease;; *) prerelease=;; esac
+          gh release create "$GITHUB_REF_NAME" "$directory/mail-web-linux-amd64.tar.gz" "$directory/SHA256SUMS" "$directory/release-manifest.json" --title "Mail Web $GITHUB_REF_NAME" --notes-file docs/release-notes.md $prerelease

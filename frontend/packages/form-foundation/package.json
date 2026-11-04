@@ -1,0 +1,25 @@
+{
+  "name": "@community-go/form-foundation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@community-go/schemas": "workspace:*",
+    "@hookform/resolvers": "^5.9.1",
+    "react": "^19.2.8",
+    "react-hook-form": "^7.86.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "jsdom": "^30.0.1",
+    "vitest": "^4.1.11",
+    "zod": "^4.5.2"
+  }
+}

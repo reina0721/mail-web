@@ -1,0 +1,61 @@
+{
+  "name": "@community-go/ui-adapter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./styles.css": "./src/styles.css",
+    "./action": "./src/action.tsx",
+    "./accessibility": "./src/accessibility.tsx",
+    "./async-region": "./src/async-region.tsx",
+    "./busy-indicator": "./src/busy-indicator.tsx",
+    "./content-swap-transition": "./src/content-swap-transition.tsx",
+    "./card": "./src/card.tsx",
+    "./command-menu": "./src/command-menu.tsx",
+    "./data-display": "./src/data-display.tsx",
+    "./date-picker-field": "./src/date-picker-field.tsx",
+    "./description-list": "./src/description-list.tsx",
+    "./disclosure": "./src/disclosure.tsx",
+    "./feedback": "./src/feedback.tsx",
+    "./feedback-context": "./src/feedback-context.ts",
+    "./feedback-provider": "./src/feedback-provider.tsx",
+    "./feedback-presence": "./src/feedback-presence.tsx",
+    "./form-field": "./src/form-field.tsx",
+    "./form-error-summary": "./src/form-error-summary.tsx",
+    "./icon-action": "./src/icon-action.tsx",
+    "./identity": "./src/identity.tsx",
+    "./menu-button": "./src/menu-button.tsx",
+    "./navigation": "./src/navigation.tsx",
+    "./navigation-flyout": "./src/navigation-flyout.tsx",
+    "./overlays": "./src/overlays.tsx",
+    "./overlay-trigger": "./src/overlay-trigger.tsx",
+    "./panel": "./src/panel.tsx",
+    "./progress-meter": "./src/progress-meter.tsx",
+    "./ready-image": "./src/ready-image.tsx",
+    "./search-box": "./src/search-box.tsx",
+    "./skeleton": "./src/skeleton.tsx",
+    "./state-surface": "./src/state-surface.tsx",
+    "./status-pill": "./src/status-pill.tsx",
+    "./step-navigation": "./src/step-navigation.tsx",
+    "./tree": "./src/tree.tsx",
+    "./toggle-group": "./src/toggle-group.tsx",
+    "./container-layout": "./src/container-layout.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@community-go/types": "workspace:*",
+    "@heroui/react": "^3.2.4",
+    "@heroui/styles": "^3.2.4",
+    "@internationalized/date": "3.12.3",
+    "react": "^19.2.8",
+    "react-aria-components": "^1.20.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.7"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ]
+}

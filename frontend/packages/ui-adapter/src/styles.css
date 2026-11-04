@@ -1,0 +1,266 @@
+@import '@heroui/styles';
+
+@layer components {
+  .ui-navigation-focus {
+    outline: none;
+  }
+  .ui-navigation-focus:focus-visible,
+  .ui-navigation-focus[data-focus-visible='true'],
+  .ui-navigation-icon-trigger:focus-visible,
+  .ui-navigation-icon-trigger[data-focus-visible='true'] {
+    outline: var(--spacing-focus-ring-width) solid var(--color-focus-ring);
+    outline-offset: var(--spacing-focus-ring-offset);
+  }
+  .ui-navigation-icon-trigger {
+    @apply relative mx-auto flex h-control-lg w-control-lg shrink-0 items-center justify-center rounded-control border-0 bg-transparent text-ink-muted outline-none transition-colors;
+    &:hover,
+    &[data-open='true'] {
+      @apply bg-surface-muted text-ink;
+    }
+    &:active {
+      @apply bg-surface-inset;
+    }
+    &[data-active='true'] {
+      @apply bg-brand-soft text-brand;
+    }
+    &:disabled,
+    &[aria-disabled='true'] {
+      @apply cursor-not-allowed opacity-55;
+    }
+  }
+  .ui-navigation-icon {
+    @apply flex size-icon-lg shrink-0 items-center justify-center;
+  }
+  .ui-navigation-hint {
+    @apply rounded-control border border-border bg-ink px-3 py-2 text-xs font-medium text-surface shadow-overlay;
+  }
+  /* Item owns a public vendor Link: map its semantic theme at the boundary. */
+  .ui-breadcrumbs {
+    --muted: var(--color-ink-muted);
+    --link: var(--color-ink);
+  }
+
+  .ui-checkbox-field {
+    --accent: var(--color-brand);
+    --accent-hover: var(--color-brand-strong);
+    --accent-foreground: var(--color-on-brand);
+  }
+
+  /* Public HeroUI Content parts own the press boundary (3.2.4 field anatomy). */
+  .ui-switch-content {
+    @apply flex w-full min-w-0 min-h-control flex-row items-center justify-between gap-4 rounded-control outline-none data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus-ring data-[hovered]:bg-surface-muted;
+  }
+
+  .ui-choice-content {
+    @apply flex w-full min-w-0 min-h-control flex-row items-start gap-3 outline-none data-[focus-visible]:ring-2 data-[focus-visible]:ring-focus-ring data-[hovered]:bg-surface-muted;
+  }
+
+  .ui-field {
+    @apply grid min-w-0 w-full content-start gap-2 text-sm;
+  }
+
+  .ui-field-label {
+    @apply font-semibold text-ink;
+  }
+
+  .ui-field-control {
+    @apply min-h-control w-full rounded-control border border-border bg-surface px-3.5 text-sm font-normal text-ink shadow-sm outline-none placeholder:text-ink-muted/70 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-55 data-[focus-visible]:border-focus-ring data-[focus-within]:border-focus-ring data-[invalid]:border-danger;
+  }
+
+  .ui-field-hint {
+    @apply text-xs font-normal leading-5 text-ink-muted;
+  }
+
+  .ui-field-error {
+    @apply text-xs font-medium leading-5 text-danger;
+  }
+
+  .ui-overlay-trigger {
+    @apply inline-flex min-h-control items-center justify-center gap-2 rounded-control border border-border bg-surface px-3.5 text-sm font-semibold text-ink shadow-sm outline-none transition-colors hover:bg-surface-muted;
+    /* 复合 Overlay Trigger（Popover/Tooltip/Dropdown 的 Trigger 子组件）的交互状态：
+       pressed/hover 保持中性 surface-muted 深浅反馈，不切换到任何语义主色；
+       focus-visible 保留项目 focus ring（可访问性反馈不删除）。 */
+    &:hover,
+    &[data-hovered='true'] {
+      background-color: var(--color-surface-muted);
+    }
+    &:active,
+    &[data-pressed='true'] {
+      background-color: var(--color-surface-muted);
+    }
+    &:focus-visible,
+    &[data-focus-visible='true'] {
+      outline: none;
+      box-shadow:
+        0 0 0 0.125rem var(--color-surface),
+        0 0 0 0.25rem var(--color-focus-ring);
+    }
+  }
+
+  .ui-dialog-layout {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - var(--spacing) * 8);
+    overflow-y: auto;
+  }
+
+  .ui-dialog-body {
+    min-height: 0;
+    flex: 1;
+    overflow-y: auto;
+  }
+  @media (height < 25rem) {
+    .ui-dialog-layout {
+      display: block;
+    }
+    .ui-dialog-body {
+      flex: none;
+      overflow: visible;
+    }
+  }
+
+  .ui-overlay-surface {
+    @apply rounded-panel border border-border bg-surface-raised text-ink shadow-overlay;
+  }
+
+  .ui-menu-surface {
+    max-width: calc(100dvw - var(--spacing) * 8);
+    overflow-y: auto;
+    will-change: opacity;
+  }
+
+  .ui-menu-surface[data-entering] {
+    animation: content-fade-in var(--motion-duration-control) var(--ease-product);
+    transition-property: opacity;
+  }
+
+  .ui-menu-surface[data-exiting] {
+    animation: content-fade-out var(--motion-duration-control) var(--ease-product);
+    transition-property: opacity;
+  }
+
+  /* High contrast preserves foreground contrast throughout the overlay lifecycle. */
+  html[data-contrast='high'] .ui-overlay-motion[data-entering],
+  html[data-contrast='high'] .ui-overlay-motion[data-exiting],
+  html[data-contrast='system'][data-system-contrast='more'] .ui-overlay-motion[data-entering],
+  html[data-contrast='system'][data-system-contrast='more'] .ui-overlay-motion[data-exiting] {
+    animation: none;
+  }
+
+  .ui-anchored-overlay-match-trigger {
+    box-sizing: border-box;
+    width: var(--trigger-width);
+  }
+
+  .ui-listbox {
+    @apply max-h-overlay w-full overflow-auto p-1.5 outline-none;
+  }
+
+  .ui-option {
+    @apply flex min-h-option cursor-default items-center justify-between gap-3 rounded-control px-3 py-2 text-sm outline-none data-[disabled]:opacity-45 data-[focused]:bg-surface-muted data-[hovered]:bg-surface-muted data-[selected]:bg-brand-soft data-[selected]:font-semibold data-[selected]:text-brand;
+  }
+
+  /* Tree（tree.tsx）：层级数据集合的行布局。
+   * Tree 自身轻量透明（Surface 由宿主 Panel/Section 提供）；
+   * 行内层级缩进由 --tree-row-level（RAC 提供）驱动，depth step 使用项目
+   * --spacing 基础变量（0.25rem × 6 = 1.5rem），不依赖可能不存在的 Tailwind
+   * --spacing-* 数值变量。 */
+  .ui-tree {
+    outline: none;
+  }
+
+  .ui-tree-row {
+    --tree-depth-step: calc(var(--spacing, 0.25rem) * 6);
+    padding-inline-start: calc(
+      (var(--tree-row-level, 1) - 1) * var(--tree-depth-step) + var(--spacing, 0.25rem) * 2
+    );
+  }
+
+  /* 行状态统一在 row 内容区表达；disabled 由 RAC 在行容器置 aria-disabled，
+   * 用后代选择器降权（结构与可辨识性保留）。 */
+  [role='row'][aria-disabled='true'] > .ui-tree-row {
+    @apply opacity-45;
+  }
+
+  .ui-progress-meter [data-slot='label'],
+  .ui-progress-meter [data-slot='progress-bar-output'] {
+    @apply text-xs font-medium text-ink-muted;
+  }
+
+  /* AsyncRegion（async-region.tsx）：数据就绪后内容层播放 content.enter 配方
+   * （keyframes 与 recipe 定义见 packages/design-system/src/motion.css；
+   *  reduced-motion 由 tokens.css 全局 `*` 规则覆盖） */
+  .ui-async-region {
+    position: relative;
+  }
+
+  .ui-async-region:is([data-phase='ready'], [data-phase='refreshing'], [data-phase='background'])
+    > .ui-async-region-content {
+    animation:
+      content-fade-in var(--motion-duration-standard) var(--ease-product) both,
+      content-rise-in var(--motion-duration-standard) var(--ease-product) both;
+  }
+
+  html[data-motion-async='off'] .ui-async-region-content {
+    animation-duration: 0.01ms;
+  }
+
+  .ui-feedback-presence[data-presence='enter'] {
+    animation:
+      content-fade-in var(--motion-duration-feedback) var(--ease-product) both,
+      content-rise-in var(--motion-duration-feedback) var(--ease-product) both;
+  }
+
+  .ui-feedback-presence[data-presence='exit'] {
+    pointer-events: none;
+    animation: feedback-exit var(--motion-duration-feedback) var(--ease-product) both;
+  }
+
+  html[data-motion-feedback='off'] .ui-feedback-presence {
+    animation-duration: 0.01ms;
+  }
+
+  .ui-ready-image {
+    position: relative;
+    display: inline-grid;
+    width: min(100%, var(--ready-image-width));
+    overflow: hidden;
+    background: var(--ds-surface-muted);
+  }
+
+  .ui-ready-image > * {
+    grid-area: 1 / 1;
+  }
+
+  .ui-ready-image-placeholder {
+    min-width: 100%;
+    min-height: 100%;
+    background: var(--ds-surface-muted);
+  }
+
+  .ui-ready-image-element {
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+  }
+
+  .ui-ready-image[data-state='ready'] > .ui-ready-image-element {
+    opacity: 1;
+    animation: media-ready var(--motion-duration-feedback) var(--ease-product) both;
+  }
+
+  html[data-motion-media='off'] .ui-ready-image-element {
+    animation-duration: 0.01ms;
+  }
+
+  /* content.swap recipe：同路由内容替换（key 重挂）时新内容淡入；
+     data-motion-swap=off 由全局 Motion Policy 降级（0.01ms）。 */
+  .ui-content-swap-surface[data-swap-entry='true'] {
+    animation: content-fade-in var(--motion-duration-feedback) var(--ease-product) both;
+  }
+
+  html[data-motion-swap='off'] .ui-content-swap-surface {
+    animation-duration: 0.01ms;
+    animation-delay: 0ms;
+  }
+}

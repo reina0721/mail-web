@@ -1,0 +1,37 @@
+{
+  "name": "@community-go/surface-foundation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./styles.css": "./src/styles.css",
+    "./layout": "./src/layout.tsx",
+    "./shell-navigation": "./src/shell-navigation.tsx",
+    "./collection": "./src/collection.tsx",
+    "./detail-settings": "./src/detail-settings.tsx",
+    "./form-actions": "./src/form-actions.tsx",
+    "./states-operations": "./src/states-operations.tsx",
+    "./motion-policy-context": "./src/motion-policy-context.ts",
+    "./viewport-reveal": "./src/viewport-reveal.tsx",
+    "./periodic-refresh": "./src/periodic-refresh.ts",
+    "./use-periodic-refresh": "./src/use-periodic-refresh.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@community-go/core": "workspace:*",
+    "@community-go/form-foundation": "workspace:*",
+    "@community-go/types": "workspace:*",
+    "@community-go/ui-adapter": "workspace:*",
+    "react": "^19.2.8"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "^19.2.7",
+    "jsdom": "^30.0.1",
+    "react-dom": "^19.2.8",
+    "vitest": "^4.1.11"
+  }
+}

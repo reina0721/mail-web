@@ -1,0 +1,262 @@
+/* Surface Token 只服务当前后台产品语义，不进入 Universal Design Token。 */
+:root {
+  --surface-section-gap: 1.5rem;
+  --surface-control-gap: 0.75rem;
+  --surface-filter-min: 14rem;
+  --surface-detail-min: 18rem;
+  --surface-settings-nav: 14rem;
+  --surface-timeline-marker-size: 0.75rem;
+  --surface-timeline-marker-offset: 0.375rem;
+  --surface-timeline-marker-radius: 9999px;
+  --surface-shell-expanded-width: 16.5rem;
+  --surface-shell-compact-width: calc(var(--spacing-control-lg) + var(--spacing) * 8);
+}
+
+@layer components {
+  .surface-shell-grid {
+    display: grid;
+    grid-template-columns: var(--surface-shell-expanded-width) minmax(0, 1fr);
+    transition: grid-template-columns var(--motion-duration-standard) var(--ease-product);
+  }
+
+  .surface-shell-grid[data-sidebar='collapsed'] {
+    grid-template-columns: var(--surface-shell-compact-width) minmax(0, 1fr);
+  }
+
+  .surface-shell-compact-group + .surface-shell-compact-group {
+    margin-block-start: calc(var(--spacing) * 3);
+    padding-block-start: calc(var(--spacing) * 3);
+    border-block-start: 1px solid var(--color-border);
+  }
+
+  .surface-shell-navigation-root-item {
+    padding-inline: calc((var(--spacing-control-lg) - var(--spacing-icon-sm)) / 2 + var(--spacing));
+  }
+
+  /* Shell 导航滚动视口：占 Sidebar 顶部/底部稳定区之间的剩余高度，独立纵向滚动。
+   * 隐藏浏览器原生 scrollbar 外观但保留完整滚动能力（滚轮、Touchpad、触摸、键盘 focus scroll）。
+   * 只作用于 NavigationViewport，不影响 html/body、主内容区或其它 Scroll Container。 */
+  .surface-shell-navigation-viewport {
+    overflow-y: auto;
+    scrollbar-width: none;
+    scrollbar-color: transparent transparent;
+    -ms-overflow-style: none;
+  }
+
+  .surface-shell-navigation-viewport::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+
+  .surface-shell-navigation-viewport::-webkit-scrollbar-track,
+  .surface-shell-navigation-viewport::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+
+  .surface-page-stack > :not(:last-child) {
+    margin-block-end: var(--surface-section-gap);
+  }
+
+  /* Region enter displacement must not grow page width. Clip adds no scroll owner. */
+  .surface-route-content {
+    overflow-x: clip;
+  }
+
+  .surface-filter-grid {
+    display: grid;
+    gap: var(--surface-control-gap);
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--surface-filter-min)), 1fr));
+  }
+
+  .surface-timeline-item {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--surface-control-gap);
+  }
+
+  .surface-split-view {
+    display: grid;
+    min-width: 0;
+    gap: var(--surface-section-gap);
+  }
+
+  .surface-split-detail,
+  .surface-settings-nav {
+    /* Resolve at the consumer: the Host supplies chrome height below :root. */
+    --surface-sticky-top: calc(var(--shell-chrome-height, 5rem) + var(--spacing) * 4);
+    min-width: 0;
+  }
+
+  .surface-settings-layout {
+    display: grid;
+    gap: var(--surface-section-gap);
+  }
+
+  @media (width < 80rem) {
+    .surface-settings-layout-persistent {
+      display: block;
+    }
+    .surface-settings-layout-persistent > .surface-settings-nav {
+      position: sticky;
+      top: var(--shell-chrome-height, 5rem);
+      z-index: var(--z-index-shell);
+      padding-block: calc(var(--spacing) * 2);
+      background: var(--color-canvas);
+      border-bottom: 1px solid var(--color-border);
+      margin-bottom: var(--surface-section-gap);
+    }
+  }
+
+  .surface-timeline-marker {
+    margin-top: var(--surface-timeline-marker-offset);
+    width: var(--surface-timeline-marker-size);
+    height: var(--surface-timeline-marker-size);
+    border-radius: var(--surface-timeline-marker-radius);
+    background: var(--ds-border-strong);
+  }
+
+  .surface-timeline-marker-success {
+    background: var(--ds-success);
+  }
+  .surface-timeline-marker-warning {
+    background: var(--ds-warning);
+  }
+  .surface-timeline-marker-danger {
+    background: var(--ds-danger);
+  }
+
+  /* Default-visible enhancement: observer failure/SSR never hides reading or controls. */
+  .surface-viewport-reveal[data-reveal-entry='true'],
+  [data-reveal-scope] [data-reveal-entry='true'] {
+    animation: surface-item-enter var(--motion-duration-feedback) var(--ease-product) backwards;
+  }
+
+  [data-reveal-scope] [data-reveal-order][data-reveal-entry='true'] {
+    animation-delay: min(
+      calc(var(--motion-delay-reveal-step) * var(--surface-reveal-rank)),
+      calc(var(--motion-delay-reveal-max) * var(--surface-reveal-fraction))
+    );
+  }
+
+  .surface-viewport-reveal:focus-within,
+  [data-reveal-scope] [data-reveal-entry]:focus-within {
+    animation: none;
+  }
+
+  html[data-motion-reveal='off'] .surface-viewport-reveal,
+  html[data-motion-reveal='off'] [data-reveal-scope] [data-reveal-entry] {
+    opacity: 1;
+    transform: none;
+    animation-duration: 0.01ms;
+    animation-delay: 0ms;
+  }
+
+  /* Route switching owns only the title. Reading items own their viewport lifecycle. */
+  .surface-route-content[data-route-enter='true']
+    > .surface-page-stack:not(:has([data-route-content]))
+    > header {
+    animation: content-rise-in var(--motion-duration-fast) var(--ease-product) both;
+  }
+  .surface-route-content[data-route-enter='true'][data-route-kind='forward']
+    > .surface-page-stack:not(:has([data-route-content]))
+    > header {
+    animation: surface-enter-forward var(--motion-duration-fast) var(--ease-product) both;
+  }
+  html[data-motion-screen='off']
+    .surface-route-content[data-route-enter='true']
+    > .surface-page-stack:not(:has([data-route-content]))
+    > header {
+    animation: none;
+  }
+  .surface-state-region:is(
+      [data-state='ready'],
+      [data-state='refreshing'],
+      [data-state='background'],
+      [data-state='partial'],
+      [data-state='readonly']
+    )
+    > .surface-state-region-content {
+    animation:
+      content-fade-in var(--motion-duration-standard) var(--ease-product) both,
+      content-rise-in var(--motion-duration-standard) var(--ease-product) both;
+  }
+
+  html[data-motion-async='off'] .surface-state-region-content {
+    animation-duration: 0.01ms;
+  }
+
+  @media (min-width: 80rem) {
+    .surface-split-view {
+      grid-template-columns: minmax(0, 2fr) minmax(var(--surface-detail-min), 1fr);
+    }
+
+    .surface-split-detail,
+    .surface-settings-nav {
+      position: sticky;
+      top: var(--surface-sticky-top);
+      align-self: start;
+    }
+
+    .surface-settings-layout {
+      grid-template-columns: minmax(var(--surface-settings-nav), 0.3fr) minmax(0, 1fr);
+    }
+
+    .surface-settings-nav {
+      max-height: calc(100dvh - var(--surface-sticky-top) - var(--spacing) * 4);
+      overflow-y: auto;
+    }
+  }
+
+  @media (width < 64rem) {
+    .surface-shell-grid,
+    .surface-shell-grid[data-sidebar='collapsed'] {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+}
+
+@layer utilities {
+  .surface-bulk-bar {
+    animation: surface-bulk-enter var(--motion-duration-feedback) var(--ease-product) both;
+  }
+}
+
+@keyframes surface-bulk-enter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-distance-reveal));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Surface route-content 方向进入（forward）：克制右入，非手机重横滑；由 data-route-kind 选择。 */
+@keyframes surface-item-enter {
+  from {
+    opacity: var(--motion-opacity-reveal-start);
+    transform: translateY(var(--motion-distance-reveal));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes surface-enter-forward {
+  from {
+    transform: translateX(var(--motion-distance-enter));
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surface-bulk-bar {
+    animation: none;
+  }
+}

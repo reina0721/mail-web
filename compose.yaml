@@ -1,0 +1,45 @@
+services:
+  mail-web:
+    image: mail-web:${MAIL_WEB_VERSION:?select an installed release}
+    pull_policy: never
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports:
+      - "${LISTEN_ADDRESS:-127.0.0.1}:${PORT:-18090}:8080"
+    env_file: .env
+    environment:
+      BIND_ADDR: 0.0.0.0:8080
+      STATIC_DIR: /app/static
+      DATABASE_PATH: /app/data/db/mail-web.sqlite
+      STAGING_DIR: /app/data/staging
+      LOG_DIR: /app/logs
+      SESSION_KEY_FILE: /app/secrets/session.key
+      PROVISIONING_KEY_FILE: /app/secrets/provisioning.key
+      NOTIFICATION_KEY_FILE: /app/secrets/notification.key
+      TURNSTILE_SECRET_FILE: /app/secrets/turnstile.key
+      MTA_HOOK_SECRET_FILE: /app/secrets/mta-hook.key
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./backups:/app/backups
+      - ./config:/app/config:ro
+      - ./secrets:/app/secrets:ro
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    networks: [mail]
+    healthcheck:
+      test: [CMD, /app/mail-web, --healthcheck]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 5m, max-file: "2"}
+networks:
+  mail:
+    external: true
+    name: ${STALWART_NETWORK:-stalwart1_mail}

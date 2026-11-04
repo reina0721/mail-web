@@ -1,0 +1,17 @@
+target/
+node_modules/
+.next/
+out/
+.env
+secrets/
+data/
+*.log
+tests/runtime/
+build/
+backups/
+releases/
+frontend/apps/web/dist/
+frontend/apps/web/*.tsbuildinfo
+frontend/apps/web/next-env.d.ts
+frontend/packages/config/
+logs/

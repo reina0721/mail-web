@@ -1,0 +1,21 @@
+{
+  "name": "@community-go/i18n",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "i18next": "^26.4.0",
+    "react": "^19.2.8",
+    "react-i18next": "^17.0.12"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.11"
+  }
+}

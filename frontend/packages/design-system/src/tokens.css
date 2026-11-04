@@ -1,0 +1,355 @@
+/* Preserve Tailwind's existing container scale for Browser Adapter measurement,
+   including when responsive utilities inline their threshold and prune the variable. */
+@theme static {
+  --container-4xl: 56rem;
+  --container-7xl: 80rem;
+}
+
+@theme {
+  /* @ds-region:theme-properties:start */
+  --font-sans: 'Inter Variable', Inter, ui-sans-serif, system-ui, sans-serif;
+  --color-canvas: var(--ds-canvas);
+  --color-surface: var(--ds-surface);
+  --color-surface-raised: var(--ds-surface-raised);
+  --color-surface-muted: var(--ds-surface-muted);
+  --color-surface-inset: var(--ds-surface-inset);
+  --color-border: var(--ds-border);
+  --color-border-strong: var(--ds-border-strong);
+  --color-ink: var(--ds-ink);
+  --color-ink-muted: var(--ds-ink-muted);
+  --color-brand: var(--ds-brand);
+  --color-brand-strong: var(--ds-brand-strong);
+  --color-brand-soft: var(--ds-brand-soft);
+  --color-success: var(--ds-success);
+  --color-success-soft: var(--ds-success-soft);
+  --color-warning: var(--ds-warning);
+  --color-warning-soft: var(--ds-warning-soft);
+  --color-danger: var(--ds-danger);
+  --color-danger-soft: var(--ds-danger-soft);
+  --color-info: var(--ds-info);
+  --color-info-soft: var(--ds-info-soft);
+  --color-on-brand: var(--ds-on-brand);
+  --color-on-success: var(--ds-on-success);
+  --color-on-warning: var(--ds-on-warning);
+  --color-on-danger: var(--ds-on-danger);
+  --color-on-info: var(--ds-on-info);
+  --color-focus-ring: var(--ds-focus-ring);
+  --color-scrim: var(--ds-scrim);
+  --radius-control: 0.75rem;
+  --radius-panel: 1rem;
+  --radius-shell: 1.25rem;
+  --spacing-control-sm: 2.25rem;
+  --spacing-control: 2.75rem;
+  --spacing-control-lg: 3rem;
+  --spacing-progress-bar: 0.1875rem;
+  --spacing-icon-sm: 1rem;
+  --spacing-icon: 1.25rem;
+  --spacing-icon-lg: 1.5rem;
+  --spacing-option: 2.5rem;
+  --spacing-overlay: 18rem;
+  --spacing-focus-ring-width: 0.125rem;
+  --spacing-focus-ring-offset: 0.125rem;
+  --shadow-panel: 0 1px 2px rgb(15 23 42 / 0.04), 0 12px 32px rgb(15 23 42 / 0.06);
+  --shadow-overlay: 0 24px 64px rgb(15 23 42 / 0.18);
+  --ease-product: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --default-transition-duration: var(
+    --motion-duration-control
+  ); /* 未显式 duration 的 transition-* 统一归 control 语义 */
+  --transition-duration-fast: var(--motion-duration-fast);
+  --transition-duration-standard: var(--motion-duration-standard);
+  --transition-duration-slow: var(--motion-duration-slow);
+  --transition-duration-page: var(--motion-duration-page);
+  --z-index-shell: 20;
+  --z-index-sticky: 30;
+  --z-index-overlay: 50;
+  --z-index-toast: 60;
+  /* @ds-region:theme-properties:end */
+}
+
+:root {
+  color-scheme: light;
+  /* @ds-region:root-motion-properties:start */
+  /* Motion Inspector 只调整调试倍率，基础档位仍是唯一数值权威。 */
+  --motion-debug-scale: 1;
+  /* Route content.enter 的前置 delay：方向进入无旧内容快照等待（纯 CSS 驱动），
+     与 content 档一致，保证页面切换响应快；方向感由位移本身表达。 */
+  --motion-delay-route-forward: var(--motion-duration-feedback);
+  --motion-delay-route-content: var(--motion-duration-feedback);
+  --motion-delay-reveal-step: calc(40ms * var(--motion-debug-scale));
+  --motion-delay-reveal-max: calc(120ms * var(--motion-debug-scale));
+  --motion-opacity-reveal-start: 0.96;
+  --motion-duration-fast: calc(120ms * var(--motion-debug-scale));
+  --motion-duration-standard: calc(180ms * var(--motion-debug-scale));
+  --motion-duration-slow: calc(240ms * var(--motion-debug-scale));
+  /* 用途语义：动效按交互用途引用，不按数值引用（权威：docs/motion-foundation.md） */
+  --motion-duration-control: var(
+    --motion-duration-fast
+  ); /* 组件自身状态动效（hover/press/switch 等） */
+  --motion-duration-feedback: var(
+    --motion-duration-standard
+  ); /* 反馈/异步状态动效（登记消费者：未来 FeedbackTransition） */
+  --motion-duration-page: var(
+    --motion-duration-slow
+  ); /* 页面级转场（消费者：motion.css 与未来页面容器） */
+  /* 顶部进度条：进入/推进/补满/退出使用 progress 语义档位（消费者：top-progress 组件）。
+   * --motion-duration-progress 是 Enter/Complete/Exit 的短档位（反馈语义）；
+   * --motion-duration-progress-cycle 是"从左侧持续延伸"的完整循环周期：
+   * 太短会让延伸肉眼不可辨，太长则等待感过重；1.1s 是克制的反馈节奏。
+   * 每次导航都保证一次完整视觉周期，不采用"导航太快就不显示"的门限策略。 */
+  --motion-duration-progress: var(--motion-duration-feedback);
+  --motion-duration-progress-cycle: 1.1s;
+  --motion-distance-reveal: 0.5rem; /* 内容/区域进场抬升位移（content.enter 配方消费；登记：未来 section.reveal） */
+  --motion-distance-enter: 1.5rem; /* 页面内容方向进入位移（forward 方向 recipe 消费：右入克制位移，非手机重横滑） */
+  /* @ds-region:root-motion-properties:end */
+  /* @ds-region:root-color-properties:start */
+  --ds-canvas: #f6f7fb;
+  --ds-surface: #ffffff;
+  --ds-surface-raised: #ffffff;
+  --ds-surface-muted: #f0f2f7;
+  --ds-surface-inset: #e9ecf3;
+  --ds-border: #e4e7ee;
+  --ds-border-strong: #cfd5df;
+  --ds-ink: #172033;
+  --ds-ink-muted: #596579;
+  --ds-brand: #5d49d6;
+  --ds-brand-strong: #4e3bc3;
+  --ds-brand-soft: #eeebff;
+  --ds-success: #10703f;
+  --ds-success-soft: #e8f7ef;
+  --ds-warning: #b54708;
+  --ds-warning-soft: #fff2df;
+  --ds-danger: #c4323d;
+  --ds-danger-soft: #ffeaec;
+  --ds-info: #2463eb;
+  --ds-info-soft: #e9f0ff;
+  --ds-on-brand: #ffffff;
+  --ds-on-success: #ffffff;
+  --ds-on-warning: #2b1600;
+  --ds-on-danger: #ffffff;
+  --ds-on-info: #ffffff;
+  --ds-focus-ring: #5d49d6;
+  --ds-scrim: rgb(15 23 42 / 0.38);
+  /* @ds-region:root-color-properties:end */
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  /* @ds-region:dark-color-properties:start */
+  --ds-canvas: #0d111c;
+  --ds-surface: #141a27;
+  --ds-surface-raised: #1a2232;
+  --ds-surface-muted: #20293a;
+  --ds-surface-inset: #101622;
+  --ds-border: #273247;
+  --ds-border-strong: #36435b;
+  --ds-ink: #f5f7fb;
+  --ds-ink-muted: #9aa6ba;
+  --ds-brand: #9b8cff;
+  --ds-brand-strong: #b0a5ff;
+  --ds-brand-soft: #29244d;
+  --ds-success: #57d08b;
+  --ds-success-soft: #153827;
+  --ds-warning: #f3b55a;
+  --ds-warning-soft: #3d2d18;
+  --ds-danger: #ff7a86;
+  --ds-danger-soft: #422129;
+  --ds-info: #78a5ff;
+  --ds-info-soft: #192d55;
+  --ds-on-brand: #17122d;
+  --ds-on-success: #082416;
+  --ds-on-warning: #2a1800;
+  --ds-on-danger: #2d1015;
+  --ds-on-info: #0b1b3a;
+  --ds-focus-ring: #b0a5ff;
+  --ds-scrim: rgb(0 0 0 / 0.58);
+  /* @ds-region:dark-color-properties:end */
+}
+
+/* 受控强调色（四套预设）：html[data-accent] 覆盖 --ds-brand 语义角色。
+ * purple = 默认组（与 :root/[data-theme] 一致，覆盖无副作用，仅作单一事实源输出）。 */
+html[data-accent='purple'],
+[data-accent-preview='purple'] {
+  /* @ds-region:accent-purple-light:start */
+  --ds-brand: #5d49d6;
+  --ds-brand-strong: #4e3bc3;
+  --ds-brand-soft: #eeebff;
+  --ds-on-brand: #ffffff;
+  --ds-focus-ring: #5d49d6;
+  /* @ds-region:accent-purple-light:end */
+}
+html[data-theme='dark'][data-accent='purple'],
+html[data-theme='dark'] [data-accent-preview='purple'] {
+  /* @ds-region:accent-purple-dark:start */
+  --ds-brand: #9b8cff;
+  --ds-brand-strong: #b0a5ff;
+  --ds-brand-soft: #29244d;
+  --ds-on-brand: #17122d;
+  --ds-focus-ring: #b0a5ff;
+  /* @ds-region:accent-purple-dark:end */
+}
+html[data-accent='blue'],
+[data-accent-preview='blue'] {
+  /* @ds-region:accent-blue-light:start */
+  --ds-brand: #2563eb;
+  --ds-brand-strong: #1e40af;
+  --ds-brand-soft: #e9f0ff;
+  --ds-on-brand: #ffffff;
+  --ds-focus-ring: #2563eb;
+  /* @ds-region:accent-blue-light:end */
+}
+html[data-theme='dark'][data-accent='blue'],
+html[data-theme='dark'] [data-accent-preview='blue'] {
+  /* @ds-region:accent-blue-dark:start */
+  --ds-brand: #8ab0ff;
+  --ds-brand-strong: #a5c3ff;
+  --ds-brand-soft: #1c2d52;
+  --ds-on-brand: #17122d;
+  --ds-focus-ring: #8ab0ff;
+  /* @ds-region:accent-blue-dark:end */
+}
+html[data-accent='green'],
+[data-accent-preview='green'] {
+  /* @ds-region:accent-green-light:start */
+  --ds-brand: #047857;
+  --ds-brand-strong: #065f46;
+  --ds-brand-soft: #e4f5ee;
+  --ds-on-brand: #ffffff;
+  --ds-focus-ring: #047857;
+  /* @ds-region:accent-green-light:end */
+}
+html[data-theme='dark'][data-accent='green'],
+html[data-theme='dark'] [data-accent-preview='green'] {
+  /* @ds-region:accent-green-dark:start */
+  --ds-brand: #5fd0a8;
+  --ds-brand-strong: #7de0ba;
+  --ds-brand-soft: #12382b;
+  --ds-on-brand: #17122d;
+  --ds-focus-ring: #5fd0a8;
+  /* @ds-region:accent-green-dark:end */
+}
+html[data-accent='orange'],
+[data-accent-preview='orange'] {
+  /* @ds-region:accent-orange-light:start */
+  --ds-brand: #c2410c;
+  --ds-brand-strong: #9a3412;
+  --ds-brand-soft: #ffecdf;
+  --ds-on-brand: #ffffff;
+  --ds-focus-ring: #c2410c;
+  /* @ds-region:accent-orange-light:end */
+}
+html[data-theme='dark'][data-accent='orange'],
+html[data-theme='dark'] [data-accent-preview='orange'] {
+  /* @ds-region:accent-orange-dark:start */
+  --ds-brand: #fdab6d;
+  --ds-brand-strong: #febf8f;
+  --ds-brand-soft: #45230f;
+  --ds-on-brand: #17122d;
+  --ds-focus-ring: #fdab6d;
+  /* @ds-region:accent-orange-dark:end */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion-mode='full']) *,
+  html:not([data-motion-mode='full']) *::before,
+  html:not([data-motion-mode='full']) *::after {
+    scroll-behavior: auto;
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+  }
+}
+
+html:is([data-motion-mode='reduced'], [data-motion-mode='off']) *,
+html:is([data-motion-mode='reduced'], [data-motion-mode='off']) *::before,
+html:is([data-motion-mode='reduced'], [data-motion-mode='off']) *::after {
+  scroll-behavior: auto;
+  animation-duration: 0.01ms;
+  animation-iteration-count: 1;
+  transition-duration: 0.01ms;
+}
+
+/* 外观/可访问性展示策略（data-* 由 Host 依偏好写 html；预设数值只由 Design System
+   管理，业务不硬编码）。与 motion-mode 外层 CSS 一致：保留在受控文件内、非 region
+   区段，由 runtime-codegen 原样保留。 */
+
+/* 界面字号：根字号 rem 缩放（small/large 相对 standard 100%）。 */
+html[data-font-scale='small'] {
+  /* @ds-region:appearance-font-small:start */
+  font-size: 93.75%;
+  /* @ds-region:appearance-font-small:end */
+}
+html[data-font-scale='large'] {
+  /* @ds-region:appearance-font-large:start */
+  font-size: 112.5%;
+  /* @ds-region:appearance-font-large:end */
+}
+
+/* 界面密度：紧凑/舒适重映射控件与面板 spacing（standard = 默认不做覆盖）。 */
+html[data-density='compact'] {
+  /* @ds-region:appearance-density-compact:start */
+  --spacing-control-sm: 1.875rem;
+  --spacing-control: 2.25rem;
+  --spacing-control-lg: 2.5rem;
+  --radius-control: 0.625rem;
+  --radius-panel: 0.875rem;
+  /* @ds-region:appearance-density-compact:end */
+}
+html[data-density='comfortable'] {
+  /* @ds-region:appearance-density-comfortable:start */
+  --spacing-control-sm: 2.625rem;
+  --spacing-control: 3.25rem;
+  --spacing-control-lg: 3.5rem;
+  /* @ds-region:appearance-density-comfortable:end */
+}
+
+/* 内容宽度：仅作用于产品主内容区（Host 稳定区域），auto 不限制。 */
+html[data-content-width='standard'] #main-content {
+  /* @ds-region:appearance-content-standard:start */
+  max-width: 72rem;
+  /* @ds-region:appearance-content-standard:end */
+}
+html[data-content-width='wide'] #main-content {
+  /* @ds-region:appearance-content-wide:start */
+  max-width: 100rem;
+  /* @ds-region:appearance-content-wide:end */
+}
+
+/* Explicit and system-requested contrast share focus, text and boundary treatment. */
+html[data-contrast='high'],
+html[data-contrast='system'][data-system-contrast='more'] {
+  /* @ds-region:appearance-contrast-high:start */
+  --motion-opacity-reveal-start: 1;
+  --spacing-focus-ring-width: 0.1875rem;
+  --spacing-focus-ring-offset: 0.1875rem;
+  /* @ds-region:appearance-contrast-high:end */
+  --color-ink-muted: var(--color-ink);
+  --color-border: color-mix(in srgb, var(--color-ink) 32%, var(--ds-border));
+  --color-border-strong: color-mix(in srgb, var(--color-ink) 32%, var(--ds-border-strong));
+}
+
+/* 可访问性增强（默认关；只增强不降低产品焦点/键盘底线）。 */
+
+/* 增强焦点轮廓：更粗焦点环 + 更强可见性。 */
+html[data-enhance-focus='on'] {
+  --spacing-focus-ring-width: 0.25rem;
+  --spacing-focus-ring-offset: 0.25rem;
+}
+
+/* 增强交互区域尺寸：重映射控件/选项 spacing（置于密度规则之后 → 优先于紧凑密度；
+   大文字/增强点击区优先于紧凑密度）。 */
+html[data-enhance-target='on'] {
+  --spacing-control-sm: 2.75rem;
+  --spacing-control: 3.25rem;
+  --spacing-control-lg: 3.5rem;
+}
+
+/* 跟随系统辅助设置：操作系统请求更高对比度时强化分隔（仅 followSystemAssistive=on
+   且 data-system-contrast=more 时生效；系统强制颜色模式保留浏览器控制权）。 */
+html[data-follow-system='on'][data-system-contrast='more'] {
+  --color-border-strong: color-mix(in srgb, var(--color-ink) 32%, var(--ds-border-strong));
+}
+
+/* Preview uses the same generated palette; no duplicated preset values. */
+.ds-accent-swatch {
+  background-color: var(--ds-brand);
+}
