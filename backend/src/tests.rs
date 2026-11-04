@@ -99,6 +99,46 @@ async fn session_isolation_csrf_revocation_and_operator_boundary() {
             .await
             .unwrap();
     assert!(revoked.is_none(), "Alice must not revoke Bob's session");
+    let alice: Uuid =
+        sqlx::query_scalar("SELECT id FROM platform_users WHERE email='alice@iqwq.com'")
+            .fetch_one(&app.db)
+            .await
+            .unwrap();
+    sqlx::query("UPDATE platform_users SET operator=1 WHERE id=?")
+        .bind(alice)
+        .execute(&app.db)
+        .await
+        .unwrap();
+    for (id, lease) in [("waiting", 0), ("running", db::now() + 60000)] {
+        sqlx::query("INSERT INTO credential_jobs(id,kind,user_id,payload,attempts,next_attempt,lease_until) VALUES (?,'account-policy',?,'{}',1,?,?)")
+            .bind(id).bind(alice).bind(db::now()+60000).bind(lease).execute(&app.db).await.unwrap();
+    }
+    let retried = routes
+        .clone()
+        .oneshot(request(
+            "POST",
+            "/admin/tasks/retry",
+            "https://mail.example.com",
+            "csrf",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(retried.status(), 200);
+    let waiting: i64 =
+        sqlx::query_scalar("SELECT next_attempt FROM credential_jobs WHERE id='waiting'")
+            .fetch_one(&app.db)
+            .await
+            .unwrap();
+    let running: i64 =
+        sqlx::query_scalar("SELECT next_attempt FROM credential_jobs WHERE id='running'")
+            .fetch_one(&app.db)
+            .await
+            .unwrap();
+    assert_eq!(waiting, 0);
+    assert!(
+        running > db::now(),
+        "Manual retries must not steal an active task lease"
+    );
     let before_poll = db::now() - 1000;
     sqlx::query("UPDATE sessions SET last_seen=? WHERE id_hash=?")
         .bind(before_poll)
@@ -168,6 +208,14 @@ fn hostile_html_has_no_active_or_remote_content() {
         assert!(!cleaned.contains(forbidden), "{cleaned}");
     }
     assert!(cleaned.contains("hello"));
+    let link = safe_html("<a href='https://example.com'>safe link</a>");
+    assert!(link.contains("target=\"_blank\""));
+    assert!(link.contains("noopener noreferrer"));
+    let quote = html_to_plain(&safe_html(
+        "<p>Hello &amp; friends</p><p>Next paragraph</p>",
+    ));
+    assert!(quote.contains("Hello & friends"));
+    assert!(quote.contains("Next paragraph"));
 }
 
 #[test]

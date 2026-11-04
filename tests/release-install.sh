@@ -18,9 +18,9 @@ sed -i 's|^PUBLIC_ORIGIN=.*|PUBLIC_ORIGIN=http://127.0.0.1:19191|;s/^PORT=.*/POR
 sh "$root/deploy/mail-web.sh" start
 sh "$root/deploy/mail-web.sh" stop
 docker run --rm -i --pull never -v "$root/data:/data" "$python_image" python3 - <<'PY'
-import sqlite3,uuid
+import sqlite3,uuid,time
 with sqlite3.connect('/data/db/mail-web.sqlite') as db:
- db.execute("INSERT INTO platform_users(id,email,recovery_email,status) VALUES (?,?,?,'provisioning')",(uuid.uuid4().bytes,'release-fixture@iqwq.com','release-fixture@example.net'))
+ db.execute("INSERT INTO platform_users(id,email,recovery_email,status,created_at) VALUES (?,?,?,'provisioning',?)",(uuid.uuid4().bytes,'release-fixture@iqwq.com','release-fixture@example.net',int(time.time()*1000)))
 PY
 sh "$root/deploy/mail-web.sh" start
 sh "$root/deploy/mail-web.sh" backup > "$root/backup-path.txt"

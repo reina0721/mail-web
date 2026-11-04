@@ -231,13 +231,12 @@ async fn draft(app: &App, me: &Identity, input: &Draft) -> Result<String> {
     let mut attachments = Vec::new();
     let mut total = 0i64;
     for a in &input.attachments {
-        let row =
-            sqlx::query("SELECT size,type FROM upload_ownership WHERE user_id=? AND blob_id=?")
-                .bind(me.user)
-                .bind(&a.blob_id)
-                .fetch_optional(&app.db)
-                .await?
-                .ok_or(Error(StatusCode::FORBIDDEN, "attachment_not_owned"))?;
+        let row = db::query(db::Statement::MailDraftSelectUploadOwnership)
+            .bind(me.user)
+            .bind(&a.blob_id)
+            .fetch_optional(&app.db)
+            .await?
+            .ok_or(Error(StatusCode::FORBIDDEN, "attachment_not_owned"))?;
         total += row.get::<i64, _>("size");
         attachments.push(json!({"blobId":a.blob_id,"name":a.name,"type":row.get::<String,_>("type"),"disposition":"attachment"}));
     }
@@ -270,6 +269,14 @@ async fn draft(app: &App, me: &Identity, input: &Draft) -> Result<String> {
         email["references"] = json!(v);
     }
     if let Some(id) = &input.id {
+        let submitted: i64 = db::scalar(db::Statement::MailSendDraftSubmissionCount)
+            .bind(me.user)
+            .bind(id)
+            .fetch_one(&app.db)
+            .await?;
+        if submitted > 0 {
+            return Err(Error(StatusCode::CONFLICT, "submission_check_required"));
+        }
         let old = app
             .upstream
             .call(
@@ -363,21 +370,45 @@ pub(super) async fn send(
     }
     let request_hash =
         hash(&serde_json::to_string(&input.draft).map_err(|_| internal("serialize"))?);
+    if let Some(draft_id) = &input.draft.id {
+        let existing: i64 = db::scalar(db::Statement::MailSendDraftSubmissionCount)
+            .bind(me.user)
+            .bind(draft_id)
+            .fetch_one(&app.db)
+            .await?;
+        if existing > 0 {
+            return Err(Error(StatusCode::CONFLICT, "submission_check_required"));
+        }
+    }
     let op = Uuid::new_v4();
-    let inserted=sqlx::query("INSERT OR IGNORE INTO operations(id,user_id,kind,idempotency_key,status,request_hash) VALUES (?,?,'send',?,'pending',?)").bind(op).bind(me.user).bind(&input.idempotency_key).bind(&request_hash).execute(&app.db).await?;
+    let inserted = db::query(db::Statement::MailSendInsertOperations)
+        .bind(op)
+        .bind(me.user)
+        .bind(&input.idempotency_key)
+        .bind(&request_hash)
+        .execute(&app.db)
+        .await?;
     if inserted.rows_affected() == 0 {
-        let old=sqlx::query("SELECT id,status,request_hash,result FROM operations WHERE user_id=? AND kind='send' AND idempotency_key=?").bind(me.user).bind(&input.idempotency_key).fetch_one(&app.db).await?;
+        let old = db::query(db::Statement::MailSendSelectOperations)
+            .bind(me.user)
+            .bind(&input.idempotency_key)
+            .fetch_one(&app.db)
+            .await?;
         if old.get::<String, _>("request_hash") != request_hash {
             return Err(Error(StatusCode::CONFLICT, "idempotency_conflict"));
         }
+        let result = old
+            .get::<Option<String>, _>("result")
+            .and_then(|v| serde_json::from_str::<Value>(&v).ok())
+            .unwrap_or(json!({}));
         return Ok(Json(
-            json!({"operationId":old.get::<Uuid,_>("id"),"status":old.get::<String,_>("status"),"result":old.get::<Option<String>,_>("result").and_then(|v|serde_json::from_str::<Value>(&v).ok())}),
+            json!({"operationId":old.get::<Uuid,_>("id"),"status":old.get::<String,_>("status"),"emailId":result["emailId"],"result":result}),
         ));
     }
     let email = match draft(&app, &me, &input.draft).await {
         Ok(id) => id,
         Err(e) => {
-            sqlx::query("UPDATE operations SET status='failed' WHERE id=?")
+            db::query(db::Statement::MailSendUpdateOperations)
                 .bind(op)
                 .execute(&app.db)
                 .await?;
@@ -395,7 +426,7 @@ pub(super) async fn send(
         .ok_or(Error(StatusCode::BAD_GATEWAY, "sender_identity_missing"))?;
     // Persist the email id before submission. Any ambiguous result is reconciled
     // against EmailSubmission/query, never automatically resubmitted.
-    sqlx::query("UPDATE operations SET result=? WHERE id=?")
+    db::query(db::Statement::MailSendUpdateOperations2)
         .bind(json!({"emailId":email}).to_string())
         .bind(op)
         .execute(&app.db)
@@ -414,7 +445,7 @@ pub(super) async fn send(
             let submitted = result["created"]["send"]["id"]
                 .as_str()
                 .ok_or(Error(StatusCode::BAD_GATEWAY, "submission_result_unknown"))?;
-            sqlx::query("UPDATE operations SET status='succeeded',result=? WHERE id=?")
+            db::query(db::Statement::MailSendUpdateOperations3)
                 .bind(json!({"emailId":email,"submissionId":submitted}).to_string())
                 .bind(op)
                 .execute(&app.db)
@@ -423,12 +454,20 @@ pub(super) async fn send(
                 json!({"operationId":op,"status":"submitted","submissionId":submitted}),
             ))
         }
-        Err(_) => {
-            sqlx::query("UPDATE operations SET status='unknown' WHERE id=?")
+        Err(error) => {
+            let status = if matches!(error, stalwart::UpstreamError::ObjectRejected) {
+                "failed"
+            } else {
+                "unknown"
+            };
+            db::query(db::Statement::MailSendUpdateOperations4)
+                .bind(status)
                 .bind(op)
                 .execute(&app.db)
                 .await?;
-            Ok(Json(json!({"operationId":op,"status":"unknown"})))
+            Ok(Json(
+                json!({"operationId":op,"status":status,"emailId":email}),
+            ))
         }
     }
 }
@@ -439,14 +478,12 @@ pub(super) async fn submission_status(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, false).await?;
-    let row = sqlx::query(
-        "SELECT status,result FROM operations WHERE id=? AND user_id=? AND kind='send'",
-    )
-    .bind(id)
-    .bind(me.user)
-    .fetch_optional(&app.db)
-    .await?
-    .ok_or(Error(StatusCode::NOT_FOUND, "operation_not_found"))?;
+    let row = db::query(db::Statement::MailSubmissionStatusSelectOperations)
+        .bind(id)
+        .bind(me.user)
+        .fetch_optional(&app.db)
+        .await?
+        .ok_or(Error(StatusCode::NOT_FOUND, "operation_not_found"))?;
     let result = row
         .get::<Option<String>, _>("result")
         .and_then(|v| serde_json::from_str::<Value>(&v).ok())
@@ -473,7 +510,7 @@ pub(super) async fn submission_status(
                 .await?;
             delivery = found["list"].clone();
             status = "submitted".into();
-            sqlx::query("UPDATE operations SET status='succeeded' WHERE id=?")
+            db::query(db::Statement::MailSubmissionStatusUpdateOperations)
                 .bind(id)
                 .execute(&app.db)
                 .await?;
@@ -549,17 +586,63 @@ pub(super) async fn upload(
         .map_err(|_| internal("staging"))?;
     let mut size = 0usize;
     use tokio::io::AsyncWriteExt;
-    let result:Result<UploadView>=async{
-        while let Some(chunk)=field.chunk().await.map_err(|_|Error(StatusCode::BAD_REQUEST,"upload_interrupted"))?{size+=chunk.len();if size>20*1024*1024{return Err(Error(StatusCode::PAYLOAD_TOO_LARGE,"attachment_too_large"))}file.write_all(&chunk).await.map_err(|_|internal("staging"))?;}
-        file.flush().await.map_err(|_|internal("staging"))?;drop(file);
-        let read=tokio::fs::File::open(&path).await.map_err(|_|internal("staging"))?;
-        let response=app.upstream.http.post(url).bearer_auth(&me.key).header("content-type",&kind).body(reqwest::Body::wrap_stream(tokio_util::io::ReaderStream::new(read))).send().await.map_err(|_|Error(StatusCode::BAD_GATEWAY,"upload_failed"))?;
-        if !response.status().is_success(){return Err(Error(StatusCode::BAD_GATEWAY,"upload_failed"))}
-        let value:Value=response.json().await.map_err(|_|Error(StatusCode::BAD_GATEWAY,"upload_failed"))?;
-        let blob=value["blobId"].as_str().ok_or(Error(StatusCode::BAD_GATEWAY,"upload_result_invalid"))?;
-        sqlx::query("INSERT OR IGNORE INTO upload_ownership(user_id,blob_id,size,type,created_at) VALUES (?,?,?,?,?)").bind(me.user).bind(blob).bind(size as i64).bind(&kind).bind(db::now()).execute(&app.db).await?;
-        Ok(UploadView{blob_id:blob.to_string(),name,content_type:kind,size})
-    }.await;
+    let result: Result<UploadView> = async {
+        while let Some(chunk) = field
+            .chunk()
+            .await
+            .map_err(|_| Error(StatusCode::BAD_REQUEST, "upload_interrupted"))?
+        {
+            size += chunk.len();
+            if size > 20 * 1024 * 1024 {
+                return Err(Error(StatusCode::PAYLOAD_TOO_LARGE, "attachment_too_large"));
+            }
+            file.write_all(&chunk)
+                .await
+                .map_err(|_| internal("staging"))?;
+        }
+        file.flush().await.map_err(|_| internal("staging"))?;
+        drop(file);
+        let read = tokio::fs::File::open(&path)
+            .await
+            .map_err(|_| internal("staging"))?;
+        let response = app
+            .upstream
+            .http
+            .post(url)
+            .bearer_auth(&me.key)
+            .header("content-type", &kind)
+            .body(reqwest::Body::wrap_stream(
+                tokio_util::io::ReaderStream::new(read),
+            ))
+            .send()
+            .await
+            .map_err(|_| Error(StatusCode::BAD_GATEWAY, "upload_failed"))?;
+        if !response.status().is_success() {
+            return Err(Error(StatusCode::BAD_GATEWAY, "upload_failed"));
+        }
+        let value: Value = response
+            .json()
+            .await
+            .map_err(|_| Error(StatusCode::BAD_GATEWAY, "upload_failed"))?;
+        let blob = value["blobId"]
+            .as_str()
+            .ok_or(Error(StatusCode::BAD_GATEWAY, "upload_result_invalid"))?;
+        db::query(db::Statement::MailUploadInsertUploadOwnership)
+            .bind(me.user)
+            .bind(blob)
+            .bind(size as i64)
+            .bind(&kind)
+            .bind(db::now())
+            .execute(&app.db)
+            .await?;
+        Ok(UploadView {
+            blob_id: blob.to_string(),
+            name,
+            content_type: kind,
+            size,
+        })
+    }
+    .await;
     let _ = tokio::fs::remove_file(path).await;
     Ok(Json(result?))
 }
@@ -630,7 +713,9 @@ pub(super) async fn download(
     );
     result.headers_mut().insert(
         "content-security-policy",
-        HeaderValue::from_static("sandbox; default-src 'none'"),
+        HeaderValue::from_static(
+            "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
+        ),
     );
     result.headers_mut().insert(
         "x-content-type-options",
@@ -659,7 +744,7 @@ pub(super) async fn events(State(app): State<Arc<App>>, headers: HeaderMap) -> R
         let client=reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).build();
         if let Ok(client)=client && let Ok(response)=client.get(url).bearer_auth(&me.key).send().await && response.status().is_success(){let mut chunks=response.bytes_stream();loop{
             let chunk=tokio::time::timeout(std::time::Duration::from_secs(45),chunks.next()).await;
-            let active:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sessions s JOIN platform_users u ON u.id=s.user_id WHERE s.id_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND s.last_seen>? AND u.status='active')").bind(&me.session).bind(db::now()).bind(db::now()-1800000).fetch_one(&app.db).await.unwrap_or(false);
+            let active:bool=db::scalar(db::Statement::MailEventsSelectSessions).bind(&me.session).bind(db::now()).bind(db::now()-1800000).fetch_one(&app.db).await.unwrap_or(false);
             if !active{yield Ok(Event::default().event("session-expired").data("{}"));break;}
             match chunk{Ok(Some(Ok(_)))=>yield Ok(Event::default().event("sync").data("{}")),_=>break}
         }}

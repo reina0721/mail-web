@@ -17,6 +17,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
         working-directory: frontend
       - run: node frontend/tooling/check-boundaries.mjs && node frontend/tooling/check-boundaries-fixtures.mjs
+      - run: node tooling/check-persistence.mjs
       - run: pnpm --dir frontend typecheck && pnpm --dir frontend build
       - run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
       - run: cargo fmt --all -- --check && cargo test --locked --workspace && cargo clippy --locked --workspace --all-targets -- -D warnings

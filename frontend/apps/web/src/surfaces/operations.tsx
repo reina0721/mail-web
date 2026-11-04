@@ -6,9 +6,11 @@ import {api,ApiError} from '../lib/api';
 import {Auth,type Session} from '../features/auth';
 import {Admin} from '../features/admin';
 import {operationsSurface,webmailSurface} from './catalog';
+import {useSessionPreferences} from '../host/session-preferences';
 
 export function OperationsSurface(){
  const[session,setSession]=useState<Session|null>(null),[loading,setLoading]=useState(true),[notice,setNotice]=useState('');
+ useSessionPreferences(session?.email);
  useEffect(()=>{let active=true;void api<Session>('/auth/session').then(value=>{if(active)setSession(value);}).catch(()=>{}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[]);
  if(loading)return <main className="p-8" role="status">正在验证运营权限…</main>;
  if(!session)return <Auth onLogin={setSession}/>;

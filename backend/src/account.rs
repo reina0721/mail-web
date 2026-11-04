@@ -1,5 +1,133 @@
 use super::*;
 pub(super) static JOB_NOTIFY: tokio::sync::Notify = tokio::sync::Notify::const_new();
+pub fn user_permissions(active: bool) -> Value {
+    // Mail-only first release. In particular, Sieve redirects, vacation replies,
+    // calendar invitations and alias sign-ins must not open alternate send paths.
+    const ALLOWED: &[&str] = &[
+        "authenticate",
+        "emailSend",
+        "emailReceive",
+        "imapAuthenticate",
+        "imapAclGet",
+        "imapAclSet",
+        "imapMyRights",
+        "imapListRights",
+        "imapAppend",
+        "imapCapability",
+        "imapId",
+        "imapCopy",
+        "imapMove",
+        "imapCreate",
+        "imapDelete",
+        "imapEnable",
+        "imapExpunge",
+        "imapFetch",
+        "imapIdle",
+        "imapList",
+        "imapLsub",
+        "imapNamespace",
+        "imapRename",
+        "imapSearch",
+        "imapSort",
+        "imapSelect",
+        "imapExamine",
+        "imapStatus",
+        "imapStore",
+        "imapSubscribe",
+        "imapThread",
+        "imapMetadataGet",
+        "imapMetadataSet",
+        "imapMetadataPrivate",
+        "pop3Authenticate",
+        "pop3List",
+        "pop3Uidl",
+        "pop3Stat",
+        "pop3Retr",
+        "pop3Dele",
+        "jmapCoreEcho",
+        "jmapBlobGet",
+        "jmapBlobCopy",
+        "jmapBlobLookup",
+        "jmapBlobUpload",
+        "jmapEmailGet",
+        "jmapEmailChanges",
+        "jmapEmailQuery",
+        "jmapEmailQueryChanges",
+        "jmapEmailCreate",
+        "jmapEmailUpdate",
+        "jmapEmailDestroy",
+        "jmapEmailCopy",
+        "jmapEmailImport",
+        "jmapEmailParse",
+        "jmapEmailSubmissionGet",
+        "jmapEmailSubmissionChanges",
+        "jmapEmailSubmissionQuery",
+        "jmapEmailSubmissionQueryChanges",
+        "jmapEmailSubmissionCreate",
+        "jmapEmailSubmissionUpdate",
+        "jmapEmailSubmissionDestroy",
+        "jmapIdentityGet",
+        "jmapIdentityChanges",
+        "jmapMailboxGet",
+        "jmapMailboxChanges",
+        "jmapMailboxQuery",
+        "jmapMailboxQueryChanges",
+        "jmapMailboxCreate",
+        "jmapMailboxUpdate",
+        "jmapMailboxDestroy",
+        "jmapThreadGet",
+        "jmapThreadChanges",
+        "jmapSearchSnippetGet",
+        "jmapQuotaGet",
+        "jmapQuotaChanges",
+        "jmapQuotaQuery",
+        "jmapQuotaQueryChanges",
+        "sysAccountSettingsGet",
+        "sysAccountPasswordGet",
+        "sysAccountPasswordUpdate",
+        "sysApiKeyGet",
+        "sysApiKeyCreate",
+        "sysApiKeyUpdate",
+        "sysApiKeyDestroy",
+        "sysApiKeyQuery",
+        "sysAppPasswordGet",
+        "sysAppPasswordCreate",
+        "sysAppPasswordUpdate",
+        "sysAppPasswordDestroy",
+        "sysAppPasswordQuery",
+    ];
+    let enabled: serde_json::Map<String, Value> = ALLOWED
+        .iter()
+        .map(|name| ((*name).into(), json!(true)))
+        .collect();
+    json!({"@type":"Replace","enabledPermissions":enabled,"disabledPermissions":if active{json!({})}else{json!({"authenticate":true,"emailSend":true})}})
+}
+pub async fn initialize_permission_policy(app: &App) -> std::result::Result<(), sqlx::Error> {
+    let mut tx = db::begin(&app.db).await?;
+    let version: Option<String> = db::scalar(db::Statement::AccountInitializePolicyVersion)
+        .fetch_optional(&mut *tx)
+        .await?;
+    if version.as_deref() != Some("1") {
+        let users = db::query(db::Statement::AccountInitializePolicyUsers)
+            .fetch_all(&mut *tx)
+            .await?;
+        for user in users {
+            let id: Uuid = user.get("id");
+            let payload=json!({"account":user.get::<String,_>("stalwart_id"),"enabled":user.get::<String,_>("status")=="active","quota":user.get::<i64,_>("quota_bytes")}).to_string();
+            db::query(db::Statement::AccountInitializePolicyJob)
+                .bind(format!("account:{id}"))
+                .bind(id)
+                .bind(payload)
+                .execute(&mut *tx)
+                .await?;
+        }
+        db::query(db::Statement::AccountInitializePolicyCommit)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
         .route("/account", get(profile).patch(update_profile))
@@ -20,6 +148,7 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/admin/registration", get(get_settings).patch(put_settings))
         .route("/admin/audit", get(audit))
         .route("/admin/tasks", get(tasks))
+        .route("/admin/tasks/retry", post(retry_tasks))
 }
 pub async fn audit_event(
     app: &App,
@@ -28,16 +157,14 @@ pub async fn audit_event(
     subject: Uuid,
     outcome: &str,
 ) -> Result<()> {
-    sqlx::query(
-        "INSERT INTO audit_events(id,actor_id,action,subject_id,outcome) VALUES (?,?,?,?,?)",
-    )
-    .bind(Uuid::new_v4())
-    .bind(actor)
-    .bind(action)
-    .bind(subject)
-    .bind(outcome)
-    .execute(&app.db)
-    .await?;
+    db::query(db::Statement::AccountAuditEventInsertAuditEvents)
+        .bind(Uuid::new_v4())
+        .bind(actor)
+        .bind(action)
+        .bind(subject)
+        .bind(outcome)
+        .execute(&app.db)
+        .await?;
     Ok(())
 }
 async fn operator(app: &App, headers: &HeaderMap, write: bool) -> Result<Identity> {
@@ -53,11 +180,10 @@ pub(super) async fn profile(
     headers: HeaderMap,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, false).await?;
-    let row =
-        sqlx::query("SELECT display_name,preferences,quota_bytes FROM platform_users WHERE id=?")
-            .bind(me.user)
-            .fetch_one(&app.db)
-            .await?;
+    let row = db::query(db::Statement::AccountProfileSelectPlatformUsers)
+        .bind(me.user)
+        .fetch_one(&app.db)
+        .await?;
     let metadata = app
         .upstream
         .call(
@@ -89,7 +215,7 @@ pub(super) async fn update_profile(
     {
         return Err(Error(StatusCode::BAD_REQUEST, "profile_invalid"));
     }
-    sqlx::query("UPDATE platform_users SET display_name=?,preferences=? WHERE id=?")
+    db::query(db::Statement::AccountUpdateProfileUpdatePlatformUsers)
         .bind(input.display_name)
         .bind(json!({"language":input.language,"theme":input.theme}).to_string())
         .bind(me.user)
@@ -126,7 +252,12 @@ pub(super) async fn sessions(
     headers: HeaderMap,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, false).await?;
-    let rows=sqlx::query("SELECT id_hash,created_at,last_seen,expires_at FROM sessions WHERE user_id=? AND revoked_at IS NULL AND expires_at>? AND last_seen>?").bind(me.user).bind(db::now()).bind(db::now()-1800000).fetch_all(&app.db).await?;
+    let rows = db::query(db::Statement::AccountSessionsSelectSessions)
+        .bind(me.user)
+        .bind(db::now())
+        .bind(db::now() - 1800000)
+        .fetch_all(&app.db)
+        .await?;
     Ok(Json(
         json!({"items":rows.iter().map(|r|json!({"id":r.get::<String,_>("id_hash"),"current":r.get::<String,_>("id_hash")==me.session,"createdAt":r.get::<i64,_>("created_at"),"lastSeen":r.get::<i64,_>("last_seen"),"expiresAt":r.get::<i64,_>("expires_at")})).collect::<Vec<_>>()}),
     ))
@@ -138,14 +269,18 @@ pub(super) async fn revoke_session(
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
     let me = identity(&app, &headers, true).await?;
-    let mut tx = app.db.begin().await?;
-    sqlx::query("UPDATE sessions SET revoked_at=? WHERE id_hash=? AND user_id=?")
+    let mut tx = db::begin(&app.db).await?;
+    db::query(db::Statement::AccountRevokeSessionUpdateSessions)
         .bind(db::now())
         .bind(&id)
         .bind(me.user)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("INSERT OR IGNORE INTO credential_revocations(session_hash) SELECT id_hash FROM sessions WHERE id_hash=? AND user_id=?").bind(id).bind(me.user).execute(&mut *tx).await?;
+    db::query(db::Statement::AccountRevokeSessionInsertCredentialRevocations)
+        .bind(id)
+        .bind(me.user)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     JOB_NOTIFY.notify_one();
     Ok(StatusCode::NO_CONTENT)
@@ -156,14 +291,18 @@ pub(super) async fn revoke_others(
     headers: HeaderMap,
 ) -> Result<StatusCode> {
     let me = identity(&app, &headers, true).await?;
-    let mut tx = app.db.begin().await?;
-    sqlx::query("UPDATE sessions SET revoked_at=? WHERE user_id=? AND id_hash<>?")
+    let mut tx = db::begin(&app.db).await?;
+    db::query(db::Statement::AccountRevokeOthersUpdateSessions)
         .bind(db::now())
         .bind(me.user)
         .bind(&me.session)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("INSERT OR IGNORE INTO credential_revocations(session_hash) SELECT id_hash FROM sessions WHERE user_id=? AND id_hash<>? AND revoked_at IS NOT NULL").bind(me.user).bind(me.session).execute(&mut *tx).await?;
+    db::query(db::Statement::AccountRevokeOthersInsertCredentialRevocations)
+        .bind(me.user)
+        .bind(me.session)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     JOB_NOTIFY.notify_one();
     Ok(StatusCode::NO_CONTENT)
@@ -199,7 +338,7 @@ pub(super) async fn create_app_password(
     if input.description.is_empty() || input.description.len() > 100 {
         return Err(Error(StatusCode::BAD_REQUEST, "description_invalid"));
     }
-    Ok(Json(app.upstream.call(&me.key,"x:AppPassword/set",json!({"create":{"credential":{"description":input.description,"permissions":{"@type":"Inherit"}}}})).await?))
+    Ok(Json(app.upstream.call(&me.key,"x:AppPassword/set",json!({"create":{"credential":{"description":input.description,"permissions":{"@type":"Disable","permissions":{"sysApiKeyCreate":true,"sysApiKeyUpdate":true,"sysApiKeyDestroy":true,"sysAppPasswordCreate":true,"sysAppPasswordUpdate":true,"sysAppPasswordDestroy":true,"sysAccountPasswordUpdate":true}}}}})).await?))
 }
 #[utoipa::path(delete,path="/api/v1/account/app-passwords/{id}",params(("id"=String,Path)),responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn delete_app_password(
@@ -217,7 +356,9 @@ pub(super) async fn delete_app_password(
 #[utoipa::path(get,path="/api/v1/admin/users",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn users(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
     operator(&app, &headers, false).await?;
-    let rows=sqlx::query("SELECT id,email,status,operator,quota_bytes,hourly_recipients,daily_recipients FROM platform_users ORDER BY created_at DESC LIMIT 200").fetch_all(&app.db).await?;
+    let rows = db::query(db::Statement::AccountUsersSelectPlatformUsers)
+        .fetch_all(&app.db)
+        .await?;
     Ok(Json(
         json!({"items":rows.iter().map(|r|json!({"id":r.get::<Uuid,_>("id"),"email":r.get::<String,_>("email"),"status":r.get::<String,_>("status"),"operator":r.get::<bool,_>("operator"),"quotaBytes":r.get::<i64,_>("quota_bytes"),"hourlyRecipients":r.get::<i64,_>("hourly_recipients"),"dailyRecipients":r.get::<i64,_>("daily_recipients")})).collect::<Vec<_>>()}),
     ))
@@ -246,17 +387,27 @@ pub(super) async fn update_user(
     {
         return Err(Error(StatusCode::BAD_REQUEST, "limits_invalid"));
     }
-    let row = sqlx::query(
-        "SELECT stalwart_id FROM platform_users WHERE id=? AND status IN ('active','disabled')",
-    )
-    .bind(id)
-    .fetch_optional(&app.db)
-    .await?
-    .ok_or(Error(StatusCode::NOT_FOUND, "user_not_found"))?;
+    let row = db::query(db::Statement::AccountUpdateUserSelectPlatformUsers)
+        .bind(id)
+        .fetch_optional(&app.db)
+        .await?
+        .ok_or(Error(StatusCode::NOT_FOUND, "user_not_found"))?;
     let payload=json!({"account":row.get::<String,_>("stalwart_id"),"enabled":input.enabled,"quota":input.quota_bytes}).to_string();
-    let mut tx = app.db.begin_with("BEGIN IMMEDIATE").await?;
-    sqlx::query("UPDATE platform_users SET status=CASE WHEN ? THEN status ELSE 'disabled' END,quota_bytes=?,hourly_recipients=?,daily_recipients=? WHERE id=?").bind(input.enabled).bind(input.quota_bytes).bind(input.hourly_recipients).bind(input.daily_recipients).bind(id).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO credential_jobs(id,kind,user_id,payload) VALUES (?,'account-policy',?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,attempts=0,lease_until=0,next_attempt=0").bind(format!("account:{id}")).bind(id).bind(payload).execute(&mut *tx).await?;
+    let mut tx = db::begin(&app.db).await?;
+    db::query(db::Statement::AccountUpdateUserUpdatePlatformUsers)
+        .bind(input.enabled)
+        .bind(input.quota_bytes)
+        .bind(input.hourly_recipients)
+        .bind(input.daily_recipients)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?;
+    db::query(db::Statement::AccountUpdateUserInsertCredentialJobs)
+        .bind(format!("account:{id}"))
+        .bind(id)
+        .bind(payload)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     if !input.enabled {
         revoke_user(&app, id).await?;
@@ -268,7 +419,12 @@ pub(super) async fn update_user(
 
 pub(super) async fn reconcile_job(app: &App) -> Result<bool> {
     let lease = db::now() + 60000;
-    let row=sqlx::query("UPDATE credential_jobs SET lease_until=? WHERE id=(SELECT id FROM credential_jobs WHERE kind='account-policy' AND lease_until<=? AND next_attempt<=? ORDER BY next_attempt LIMIT 1) RETURNING id,user_id,payload").bind(lease).bind(db::now()).bind(db::now()).fetch_optional(&app.db).await?;
+    let row = db::query(db::Statement::AccountReconcileJobUpdateCredentialJobs)
+        .bind(lease)
+        .bind(db::now())
+        .bind(db::now())
+        .fetch_optional(&app.db)
+        .await?;
     let Some(row) = row else { return Ok(false) };
     let id: String = row.get("id");
     let user: Uuid = row.get("user_id");
@@ -279,7 +435,10 @@ pub(super) async fn reconcile_job(app: &App) -> Result<bool> {
     let enabled = data["enabled"] == true;
     let mut revocation_ready = true;
     if enabled {
-        let sessions=sqlx::query("SELECT s.id_hash,s.upstream_key,s.upstream_key_id FROM sessions s JOIN credential_revocations r ON r.session_hash=s.id_hash WHERE s.user_id=?").bind(user).fetch_all(&app.db).await?;
+        let sessions = db::query(db::Statement::AccountReconcileJobSelectSessions)
+            .bind(user)
+            .fetch_all(&app.db)
+            .await?;
         for session in sessions {
             let sid: String = session.get("id_hash");
             if super::revoke_upstream(
@@ -291,7 +450,7 @@ pub(super) async fn reconcile_job(app: &App) -> Result<bool> {
             )
             .await
             {
-                sqlx::query("DELETE FROM credential_revocations WHERE session_hash=?")
+                db::query(db::Statement::AccountReconcileJobDeleteCredentialRevocations)
                     .bind(sid)
                     .execute(&app.db)
                     .await?;
@@ -302,7 +461,8 @@ pub(super) async fn reconcile_job(app: &App) -> Result<bool> {
         }
     }
     let mut update = json!({});
-    update[data["account"].as_str().ok_or(internal("job_account"))?] = json!({"quotas/maxDiskQuota":data["quota"],"permissions":if enabled{json!({"@type":"Inherit"})}else{json!({"@type":"Merge","disabledPermissions":{"authenticate":true,"emailSend":true}})}});
+    update[data["account"].as_str().ok_or(internal("job_account"))?] =
+        json!({"quotas/maxDiskQuota":data["quota"],"permissions":user_permissions(enabled)});
     let result = if revocation_ready {
         app.upstream
             .call(
@@ -315,15 +475,20 @@ pub(super) async fn reconcile_job(app: &App) -> Result<bool> {
         Err(stalwart::UpstreamError::Rejected)
     };
     if result.is_ok() {
-        let mut tx = app.db.begin_with("BEGIN IMMEDIATE").await?;
-        let current:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM credential_jobs WHERE id=? AND lease_until=? AND payload=?)").bind(&id).bind(lease).bind(&payload).fetch_one(&mut *tx).await?;
+        let mut tx = db::begin(&app.db).await?;
+        let current: bool = db::scalar(db::Statement::AccountReconcileJobSelectCredentialJobs)
+            .bind(&id)
+            .bind(lease)
+            .bind(&payload)
+            .fetch_one(&mut *tx)
+            .await?;
         if current {
-            sqlx::query("UPDATE platform_users SET status=? WHERE id=?")
+            db::query(db::Statement::AccountReconcileJobUpdatePlatformUsers)
                 .bind(if enabled { "active" } else { "disabled" })
                 .bind(user)
                 .execute(&mut *tx)
                 .await?;
-            sqlx::query("DELETE FROM credential_jobs WHERE id=? AND lease_until=?")
+            db::query(db::Statement::AccountReconcileJobDeleteCredentialJobs)
                 .bind(&id)
                 .bind(lease)
                 .execute(&mut *tx)
@@ -331,7 +496,12 @@ pub(super) async fn reconcile_job(app: &App) -> Result<bool> {
         }
         tx.commit().await?;
     } else {
-        sqlx::query("UPDATE credential_jobs SET attempts=attempts+1,lease_until=0,next_attempt=? WHERE id=? AND lease_until=?").bind(db::now()+60000).bind(&id).bind(lease).execute(&app.db).await?;
+        db::query(db::Statement::AccountReconcileJobUpdateCredentialJobs2)
+            .bind(db::now() + 60000)
+            .bind(&id)
+            .bind(lease)
+            .execute(&app.db)
+            .await?;
     }
     Ok(true)
 }
@@ -345,30 +515,40 @@ pub(super) async fn get_settings(
         json!({"policy":registration::settings(&app).await?,"dependenciesReady":app.services.ready()}),
     ))
 }
-#[utoipa::path(patch,path="/api/v1/admin/registration",request_body=Value,responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
+#[derive(Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct RegistrationPolicy {
+    enabled: bool,
+    maximum_accounts: i64,
+    quota_bytes: i64,
+    attachment_bytes: i64,
+    hourly_recipients: i64,
+    daily_recipients: i64,
+}
+#[utoipa::path(patch,path="/api/v1/admin/registration",request_body=RegistrationPolicy,responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn put_settings(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
-    Json(input): Json<Value>,
+    Json(input): Json<RegistrationPolicy>,
 ) -> Result<StatusCode> {
     let me = operator(&app, &headers, true).await?;
-    if !input["enabled"].is_boolean()
-        || !(1..=100).contains(&input["maximumAccounts"].as_i64().unwrap_or(0))
-        || input["quotaBytes"].as_i64().unwrap_or(0) <= 0
-        || !(1..=20971520).contains(&input["attachmentBytes"].as_i64().unwrap_or(0))
-        || !(1..=10000).contains(&input["hourlyRecipients"].as_i64().unwrap_or(0))
-        || !(1..=100000).contains(&input["dailyRecipients"].as_i64().unwrap_or(0))
+    if !(1..=100).contains(&input.maximum_accounts)
+        || input.quota_bytes <= 0
+        || !(1..=20971520).contains(&input.attachment_bytes)
+        || !(1..=10000).contains(&input.hourly_recipients)
+        || !(1..=100000).contains(&input.daily_recipients)
+        || input.daily_recipients < input.hourly_recipients
     {
         return Err(Error(StatusCode::BAD_REQUEST, "policy_invalid"));
     }
-    if input["enabled"] == true && !app.services.ready() {
+    if input.enabled && !app.services.ready() {
         return Err(Error(
             StatusCode::CONFLICT,
             "registration_dependencies_missing",
         ));
     }
-    sqlx::query("UPDATE platform_settings SET value=? WHERE key='registration'")
-        .bind(input.to_string())
+    db::query(db::Statement::AccountPutSettingsUpdatePlatformSettings)
+        .bind(serde_json::to_string(&input).map_err(|_| internal("policy"))?)
         .execute(&app.db)
         .await?;
     audit_event(&app, me.user, "registration.update", me.user, "success").await?;
@@ -377,30 +557,48 @@ pub(super) async fn put_settings(
 #[utoipa::path(get,path="/api/v1/admin/audit",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn audit(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
     operator(&app, &headers, false).await?;
-    let rows = sqlx::query(
-        "SELECT id,action,outcome,created_at FROM audit_events ORDER BY created_at DESC LIMIT 200",
-    )
-    .fetch_all(&app.db)
-    .await?;
+    let rows = db::query(db::Statement::AccountAuditSelectAuditEvents)
+        .fetch_all(&app.db)
+        .await?;
     Ok(Json(
-        json!({"items":rows.iter().map(|r|json!({"id":r.get::<Uuid,_>("id"),"action":r.get::<String,_>("action"),"outcome":r.get::<String,_>("outcome"),"createdAt":r.get::<i64,_>("created_at")})).collect::<Vec<_>>()}),
+        json!({"items":rows.iter().map(|r|json!({"id":r.get::<Uuid,_>("id"),"actorId":r.get::<Option<Uuid>,_>("actor_id"),"subjectId":r.get::<Option<Uuid>,_>("subject_id"),"action":r.get::<String,_>("action"),"outcome":r.get::<String,_>("outcome"),"createdAt":r.get::<i64,_>("created_at")})).collect::<Vec<_>>()}),
     ))
 }
 #[utoipa::path(get,path="/api/v1/admin/tasks",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn tasks(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
     operator(&app, &headers, false).await?;
-    let pending: i64 = sqlx::query_scalar("SELECT count(*) FROM credential_revocations")
+    let pending: i64 = db::scalar(db::Statement::AccountTasksSelectCredentialRevocations)
         .fetch_one(&app.db)
         .await?;
-    let policy_jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM credential_jobs")
+    let policy_jobs: i64 = db::scalar(db::Statement::AccountTasksSelectCredentialJobs)
         .fetch_one(&app.db)
         .await?;
-    let reconciliation: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM platform_users WHERE status IN ('provisioning','reconcile')",
-    )
-    .fetch_one(&app.db)
-    .await?;
+    let reconciliation: i64 = db::scalar(db::Statement::AccountTasksSelectPlatformUsers)
+        .fetch_one(&app.db)
+        .await?;
     Ok(Json(
         json!({"accountPolicyJobs":policy_jobs,"credentialRevocations":pending,"registrationReconciliation":reconciliation}),
     ))
+}
+#[utoipa::path(post,path="/api/v1/admin/tasks/retry",responses((status=200,body=Value),(status=401,description="Session required"),(status=403,description="Denied")))]
+pub(super) async fn retry_tasks(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>> {
+    let me = operator(&app, &headers, true).await?;
+    let mut tx = db::begin(&app.db).await?;
+    let policy = db::query(db::Statement::AccountRetryTasksUpdateCredentialJobs)
+        .bind(db::now())
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    let credentials = db::query(db::Statement::AccountRetryTasksUpdateCredentialRevocations)
+        .bind(db::now())
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    tx.commit().await?;
+    JOB_NOTIFY.notify_one();
+    audit_event(&app, me.user, "task.retry", me.user, "queued").await?;
+    Ok(Json(json!({"queued":policy+credentials})))
 }

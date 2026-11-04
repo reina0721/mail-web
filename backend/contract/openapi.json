@@ -231,7 +231,9 @@
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {}
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationPolicy"
+              }
             }
           },
           "required": true
@@ -274,6 +276,30 @@
           },
           "204": {
             "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/tasks/retry": {
+      "post": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "retry_tasks",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
           },
           "401": {
             "description": "Session required"
@@ -1105,12 +1131,11 @@
             "description": "",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ChallengeView"
+                }
               }
             }
-          },
-          "204": {
-            "description": "Completed"
           },
           "401": {
             "description": "Session required"
@@ -1132,18 +1157,11 @@
             "description": "",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PublicRegistrationPolicy"
+                }
               }
             }
-          },
-          "204": {
-            "description": "Completed"
-          },
-          "401": {
-            "description": "Session required"
-          },
-          "403": {
-            "description": "Denied"
           }
         }
       }
@@ -1169,12 +1187,11 @@
             "description": "",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationView"
+                }
               }
             }
-          },
-          "204": {
-            "description": "Completed"
           },
           "401": {
             "description": "Session required"
@@ -1329,6 +1346,18 @@
           },
           "turnstile_token": {
             "type": "string"
+          }
+        }
+      },
+      "ChallengeView": {
+        "type": "object",
+        "required": [
+          "challengeId"
+        ],
+        "properties": {
+          "challengeId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -1493,6 +1522,35 @@
           }
         }
       },
+      "PublicRegistrationPolicy": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "domain",
+          "siteKey",
+          "maximumAccounts",
+          "attachmentBytes"
+        ],
+        "properties": {
+          "attachmentBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "maximumAccounts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "siteKey": {
+            "type": "string"
+          }
+        }
+      },
       "Recovery": {
         "type": "object",
         "required": [
@@ -1534,6 +1592,42 @@
           },
           "verification_token": {
             "type": "string"
+          }
+        }
+      },
+      "RegistrationPolicy": {
+        "type": "object",
+        "required": [
+          "enabled",
+          "maximumAccounts",
+          "quotaBytes",
+          "attachmentBytes",
+          "hourlyRecipients",
+          "dailyRecipients"
+        ],
+        "properties": {
+          "attachmentBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "dailyRecipients": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "hourlyRecipients": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "maximumAccounts": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quotaBytes": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },
@@ -1619,6 +1713,22 @@
           "quota_bytes": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "VerificationView": {
+        "type": "object",
+        "required": [
+          "challengeId",
+          "verificationToken"
+        ],
+        "properties": {
+          "challengeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "verificationToken": {
+            "type": "string"
           }
         }
       },

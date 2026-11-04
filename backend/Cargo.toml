@@ -26,6 +26,7 @@ futures-util = "0.3"
 async-stream = "0.3"
 tracing-appender = "0.2"
 ammonia = "4"
+html2text = { version = "0.17.4", default-features = false }
 subtle = "2"
 zeroize = "1"
 urlencoding = "2"

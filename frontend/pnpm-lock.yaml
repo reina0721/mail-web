@@ -50,6 +50,9 @@ importers:
       next:
         specifier: ^16.3.3
         version: 16.4.5(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      openapi-fetch:
+        specifier: ^0.17.0
+        version: 0.17.0
       react:
         specifier: ^19.2.8
         version: 19.3.1
@@ -1436,6 +1439,12 @@ packages:
     resolution: {integrity: sha512-XrsrhT5sybtKI6wakr2SPOlGZWWYbUXZ7a0jT8/QOeAPau+1X/bSegNe5YR75oJmEZQbKningirmGOEJCIk61Q==}
     engines: {node: '>=12.20.0'}
 
+  openapi-fetch@0.17.0:
+    resolution: {integrity: sha512-PsbZR1wAPcG91eEthKhN+Zn92FMHxv+/faECIwjXdxfTODGSGegYv0sc1Olz+HYPvKOuoXfp+0pA2XVt2cI0Ig==}
+
+  openapi-typescript-helpers@0.1.0:
+    resolution: {integrity: sha512-OKTGPthhivLw/fHz6c3OPtg72vi86qaMlqbJuVJ23qOvQ+53uw1n7HdmkJFibloF7QEjDrDkzJiOJuockM/ljw==}
+
   openapi-typescript@7.13.0:
     resolution: {integrity: sha512-EFP392gcqXS7ntPvbhBzbF8TyBA+baIYEm791Hy5YkjDYKTnk/Tn5OQeKm5BIZvJihpp8Zzr4hzx0Irde1LNGQ==}
     hasBin: true
@@ -2786,6 +2795,12 @@ snapshots:
   object-assign@4.1.1: {}
 
   obug@2.2.1: {}
+
+  openapi-fetch@0.17.0:
+    dependencies:
+      openapi-typescript-helpers: 0.1.0
+
+  openapi-typescript-helpers@0.1.0: {}
 
   openapi-typescript@7.13.0(typescript@5.9.3):
     dependencies:

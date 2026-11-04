@@ -17,7 +17,7 @@ pub async fn operator(
     {
         return Err("invalid operator or external recovery email".into());
     }
-    if let Some(existing) = sqlx::query("SELECT operator,status FROM platform_users WHERE email=?")
+    if let Some(existing) = db::query(db::Statement::BootstrapOperatorSelectPlatformUsers)
         .bind(email)
         .fetch_optional(&app.db)
         .await?
@@ -36,12 +36,17 @@ pub async fn operator(
     let marker = format!("mail-web:{id}");
     // Reserve locally before creating upstream. Ambiguous failures retain this
     // record for reconciliation; this command never adopts an existing account.
-    sqlx::query("INSERT INTO platform_users(id,email,recovery_email,status,operator) VALUES (?,?,?,'provisioning',1)").bind(id).bind(email).bind(recovery).execute(&app.db).await?;
-    let created=app.upstream.call(&app.services.provisioning_key,"x:Account/set",json!({"create":{"operator":{"@type":"User","name":name,"domainId":app.services.domain_id,"description":marker,"roles":{"@type":"User"},"credentials":{"0":{"@type":"Password","secret":password.trim()}},"permissions":{"@type":"Merge","disabledPermissions":{"authenticate":true,"emailSend":true}},"quotas":{"maxDiskQuota":1073741824,"maxApiKeys":64}}}})).await?;
+    db::query(db::Statement::BootstrapOperatorInsertPlatformUsers)
+        .bind(id)
+        .bind(email)
+        .bind(recovery)
+        .execute(&app.db)
+        .await?;
+    let created=app.upstream.call(&app.services.provisioning_key,"x:Account/set",json!({"create":{"operator":{"@type":"User","name":name,"domainId":app.services.domain_id,"description":marker,"roles":{"@type":"User"},"credentials":{"0":{"@type":"Password","secret":password.trim()}},"permissions":account::user_permissions(false),"quotas":{"maxDiskQuota":1073741824,"maxApiKeys":64}}}})).await?;
     let account = created["created"]["operator"]["id"]
         .as_str()
         .ok_or("operator creation result unknown")?;
-    sqlx::query("UPDATE platform_users SET stalwart_id=? WHERE id=?")
+    db::query(db::Statement::BootstrapOperatorUpdatePlatformUsers)
         .bind(account)
         .bind(id)
         .execute(&app.db)
@@ -50,7 +55,7 @@ pub async fn operator(
         .await
         .map_err(|_| "submission scope synchronization failed")?;
     let mut update = json!({});
-    update[account] = json!({"permissions":{"@type":"Inherit"}});
+    update[account] = json!({"permissions":account::user_permissions(true)});
     app.upstream
         .call(
             &app.services.provisioning_key,
@@ -58,7 +63,7 @@ pub async fn operator(
             json!({"update":update}),
         )
         .await?;
-    sqlx::query("UPDATE platform_users SET status='active' WHERE id=?")
+    db::query(db::Statement::BootstrapOperatorUpdatePlatformUsers2)
         .bind(id)
         .execute(&app.db)
         .await?;

@@ -7,18 +7,22 @@
     "Submission outage fails closed; external incoming remains accepted",
     "Concurrent registration with verified claims and idempotent retry",
     "Password change, single-use recovery claims and device revocation",
-    "Nine backend tests, frontend static build and 20 architecture fixtures"
+    "Nine backend tests, frontend static build and 20 architecture fixtures",
+    "Concurrent identical sends and lost-response reconciliation produce one submission",
+    "HTML-only reply text, active content removal and submitted-draft editing guard",
+    "Client credentials cannot create access keys; mail-only accounts cannot use Sieve/vacation"
   ],
   "verifiedInProduction": [
     "GitHub Release checksum verification, Docker load and local-only Compose startup",
     "Independent operator account, real login and mailbox APIs",
     "Mail Web submission received by Mail-tester with 10/10; SPF, DKIM, DMARC and PTR pass",
-    "External Port25 reply received and read through the platform message API"
+    "External Port25 reply received and read through the platform message API",
+    "SMTP quota, restart persistence and policy outage fail-closed behavior"
   ],
   "unverified": [
     "Production Turnstile token verification through the final HTTPS origin",
-    "Full registration and password recovery fault-injection scenarios",
     "Mobile, dark mode, keyboard and accessibility acceptance",
-    "Release-only clean installation, update, restore and load testing"
+    "Release-only clean installation, update, restore and load testing",
+    "Final release packaging and deployment acceptance after current changes"
   ]
 }

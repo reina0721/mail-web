@@ -100,6 +100,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tasks/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retry_tasks"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users": {
         parameters: {
             query?: never;
@@ -568,6 +584,10 @@ export interface components {
             purpose: string;
             turnstile_token: string;
         };
+        ChallengeView: {
+            /** Format: uuid */
+            challengeId: string;
+        };
         CredentialInput: {
             description: string;
         };
@@ -603,6 +623,15 @@ export interface components {
             language: string;
             theme: string;
         };
+        PublicRegistrationPolicy: {
+            /** Format: int64 */
+            attachmentBytes: number;
+            domain: string;
+            enabled: boolean;
+            /** Format: int64 */
+            maximumAccounts: number;
+            siteKey: string;
+        };
         Recovery: {
             /** Format: uuid */
             challenge_id: string;
@@ -615,6 +644,19 @@ export interface components {
             name: string;
             password: string;
             verification_token: string;
+        };
+        RegistrationPolicy: {
+            /** Format: int64 */
+            attachmentBytes: number;
+            /** Format: int64 */
+            dailyRecipients: number;
+            enabled: boolean;
+            /** Format: int64 */
+            hourlyRecipients: number;
+            /** Format: int64 */
+            maximumAccounts: number;
+            /** Format: int64 */
+            quotaBytes: number;
         };
         Send: {
             draft: components["schemas"]["Draft"];
@@ -640,6 +682,11 @@ export interface components {
             hourly_recipients: number;
             /** Format: int64 */
             quota_bytes: number;
+        };
+        VerificationView: {
+            /** Format: uuid */
+            challengeId: string;
+            verificationToken: string;
         };
         VerifyInput: {
             /** Format: uuid */
@@ -954,7 +1001,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": unknown;
+                "application/json": components["schemas"]["RegistrationPolicy"];
             };
         };
         responses: {
@@ -1012,6 +1059,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Denied */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    retry_tasks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
             };
             /** @description Session required */
             401: {
@@ -2015,15 +2095,8 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ChallengeView"];
                 };
-            };
-            /** @description Completed */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Session required */
             401: {
@@ -2055,29 +2128,8 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["PublicRegistrationPolicy"];
                 };
-            };
-            /** @description Completed */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Session required */
-            401: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Denied */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
         };
     };
@@ -2099,15 +2151,8 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["VerificationView"];
                 };
-            };
-            /** @description Completed */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Session required */
             401: {

@@ -10,10 +10,9 @@ pub async fn sync_scope(app: &App) -> Result<()> {
         ));
     }
     let _guard = SCOPE_LOCK.lock().await;
-    let rows =
-        sqlx::query("SELECT email,stalwart_id FROM platform_users WHERE stalwart_id IS NOT NULL")
-            .fetch_all(&app.db)
-            .await?;
+    let rows = db::query(db::Statement::PolicySyncScopeSelectPlatformUsers)
+        .fetch_all(&app.db)
+        .await?;
     let mut names = Vec::<String>::new();
     for row in rows {
         let email: String = row.get("email");
@@ -50,8 +49,13 @@ pub async fn sync_scope(app: &App) -> Result<()> {
 
 pub async fn rate(app: &App, bucket: &str, maximum: i64, period: i64) -> Result<()> {
     let now = db::now();
-    let row=sqlx::query("INSERT INTO request_limits(bucket,window_start,count) VALUES (?, ?, 1) ON CONFLICT(bucket) DO UPDATE SET count=CASE WHEN window_start<=? THEN 1 ELSE count+1 END,window_start=CASE WHEN window_start<=? THEN excluded.window_start ELSE window_start END RETURNING count")
-        .bind(bucket).bind(now).bind(now-period).bind(now-period).fetch_one(&app.db).await?;
+    let row = db::query(db::Statement::PolicyRateInsertRequestLimits)
+        .bind(bucket)
+        .bind(now)
+        .bind(now - period)
+        .bind(now - period)
+        .fetch_one(&app.db)
+        .await?;
     if row.get::<i64, _>("count") > maximum {
         return Err(Error(StatusCode::TOO_MANY_REQUESTS, "rate_limited"));
     }
@@ -87,10 +91,14 @@ struct Address {
 }
 
 async fn reserve(app: &App, login: &str, event: &str, count: i64) -> Result<bool> {
-    let mut tx = app.db.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = db::begin(&app.db).await?;
     let normalized = login.to_lowercase();
-    let row=sqlx::query("SELECT id,status,hourly_recipients,daily_recipients FROM platform_users WHERE email=? OR stalwart_id=? OR email=?")
-        .bind(&normalized).bind(&normalized).bind(format!("{normalized}@iqwq.com")).fetch_optional(&mut *tx).await?;
+    let row = db::query(db::Statement::PolicyReserveSelectPlatformUsers)
+        .bind(&normalized)
+        .bind(&normalized)
+        .bind(format!("{normalized}@iqwq.com"))
+        .fetch_optional(&mut *tx)
+        .await?;
     let Some(row) = row else {
         tx.commit().await?;
         return Ok(false);
@@ -102,27 +110,39 @@ async fn reserve(app: &App, login: &str, event: &str, count: i64) -> Result<bool
         return Ok(true);
     }
     let user: Uuid = row.get("id");
-    if sqlx::query_scalar::<_, i64>(
-        "SELECT count(*) FROM outbound_reservations WHERE event_id=? AND user_id=?",
-    )
-    .bind(event)
-    .bind(user)
-    .fetch_one(&mut *tx)
-    .await?
+    if db::scalar::<i64>(db::Statement::PolicyReserveSelectOutboundReservations3)
+        .bind(event)
+        .bind(user)
+        .fetch_one(&mut *tx)
+        .await?
         > 0
     {
         tx.commit().await?;
         return Ok(true);
     }
     let now = db::now();
-    let hourly:i64=sqlx::query_scalar("SELECT COALESCE(sum(recipient_count),0) FROM outbound_reservations WHERE user_id=? AND created_at>?").bind(user).bind(now-3600000).fetch_one(&mut *tx).await?;
-    let daily:i64=sqlx::query_scalar("SELECT COALESCE(sum(recipient_count),0) FROM outbound_reservations WHERE user_id=? AND created_at>?").bind(user).bind(now-86400000).fetch_one(&mut *tx).await?;
+    let hourly: i64 = db::scalar(db::Statement::PolicyReserveSelectOutboundReservations)
+        .bind(user)
+        .bind(now - 3600000)
+        .fetch_one(&mut *tx)
+        .await?;
+    let daily: i64 = db::scalar(db::Statement::PolicyReserveSelectOutboundReservations2)
+        .bind(user)
+        .bind(now - 86400000)
+        .fetch_one(&mut *tx)
+        .await?;
     if hourly + count > row.get::<i64, _>("hourly_recipients")
         || daily + count > row.get::<i64, _>("daily_recipients")
     {
         return Ok(false);
     }
-    sqlx::query("INSERT INTO outbound_reservations(event_id,user_id,recipient_count,created_at) VALUES (?,?,?,?)").bind(event).bind(user).bind(count).bind(now).execute(&mut *tx).await?;
+    db::query(db::Statement::PolicyReserveInsertOutboundReservations)
+        .bind(event)
+        .bind(user)
+        .bind(count)
+        .bind(now)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     Ok(true)
 }
@@ -213,6 +233,11 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(n, 10);
+        assert!(rate(&app, "login-test", 1, 60000).await.is_ok());
+        assert_eq!(
+            rate(&app, "login-test", 1, 60000).await.unwrap_err().0,
+            StatusCode::TOO_MANY_REQUESTS
+        );
         assert!(!reserve(&app, "u@iqwq.com", "extra", 1).await.unwrap());
         assert!(
             !reserve(&app, "unmanaged@iqwq.com", "unmanaged", 1)
@@ -226,6 +251,13 @@ mod tests {
             db: restored,
             ..(*app).clone()
         };
+        assert_eq!(
+            rate(&restarted, "login-test", 1, 60000)
+                .await
+                .unwrap_err()
+                .0,
+            StatusCode::TOO_MANY_REQUESTS
+        );
         assert!(!reserve(&restarted, "u", "after-restart", 1).await.unwrap());
         let event: String =
             sqlx::query_scalar("SELECT event_id FROM outbound_reservations LIMIT 1")

@@ -750,6 +750,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "html2text"
+version = "0.17.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31e981cc9b710410461bf2e474b54da9ccb2fa3212936295bc5c02cb09f3d3f2"
+dependencies = [
+ "html5ever",
+ "tendril",
+ "thiserror",
+ "unicode-width",
+]
+
+[[package]]
 name = "html5ever"
 version = "0.40.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1114,6 +1126,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "hex",
+ "html2text",
  "http-body-util",
  "rand 0.8.8",
  "reqwest",
@@ -2445,6 +2458,12 @@ name = "unicode-properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "993ad287eb20e8ba755312801cfe1413e0f25d604075863acaddca10b04c1833"
+
+[[package]]
+name = "unicode-width"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ca718471876992059f251e33aafc334346ada08042b7661dd1fe313a9bced557"
 
 [[package]]
 name = "universal-hash"

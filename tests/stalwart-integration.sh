@@ -48,6 +48,13 @@ rpc x:ApiKey/set "$(jq -n --arg id "$key_id" '{destroy:[$id]}')"
 status=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $key" http://127.0.0.1:19080/jmap/session)
 test "$status" = 401
 echo 'PASS: revoked key is rejected'
+expires=$(date -u -d '+3 seconds' +%Y-%m-%dT%H:%M:%SZ)
+rpc x:ApiKey/set "$(jq -n --arg expires "$expires" '{create:{short:{description:"isolated expiration proof",permissions:{"@type":"Inherit"},expiresAt:$expires}}}')"
+expired_key=$(jq -er '.methodResponses[0][1].created.short.secret' "$root/result.json")
+sleep 4
+status=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $expired_key" http://127.0.0.1:19080/jmap/session)
+test "$status" = 401
+echo 'PASS: expired user API key is rejected'
 username="${prefix}b@example.com";password=$(cat "$root/b.password")
 attempt=0
 while :; do

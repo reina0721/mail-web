@@ -4,7 +4,8 @@ import {z} from 'zod';
 import {FoundationForm,useFoundationForm} from '@community-go/form-foundation';
 import {TextField,PasswordField} from '@community-go/ui-adapter/form-field';
 import {Action} from '@community-go/ui-adapter/action';
-import {api,ApiError} from '../lib/api';
+import {ApiError} from '../lib/api';
+import {contractClient,unwrapContract} from '../lib/contract-client';
 import type {Session} from './auth';
 
 const loginSchema=z.object({email:z.email().max(254),password:z.string().min(1).max(512)});
@@ -14,9 +15,9 @@ export function LoginForm({initialEmail,onLogin}:{initialEmail:string;onLogin:(s
  return <FoundationForm className="flex flex-col gap-4" form={form} onSubmit={async values=>{
   setNotice('');
   try{
-   await api('/auth/login',{method:'POST',body:JSON.stringify(values)});
+   unwrapContract(await contractClient.POST('/api/v1/auth/login',{body:values}));
    form.reset({email:values.email,password:''});
-   onLogin(await api<Session>('/auth/session'));
+   onLogin(unwrapContract(await contractClient.GET('/api/v1/auth/session')));
   }catch(error){
    form.setValue('password','',{dirty:false});
    setNotice(error instanceof ApiError&&error.status===429?'尝试次数较多，请稍后再登录':error instanceof ApiError&&error.status===401?'邮箱地址或密码不正确':'暂时无法登录，请稍后重试');

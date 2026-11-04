@@ -59,3 +59,28 @@ ownership and update the installed manager atomically. The revised manager
 passed clean/repeated installation, consistent backup, empty-directory
 restore, missing-image failure and execution from `/tmp` against the first
 release image. Packaged-version validation is repeated for the next release.
+
+## Additional fault and boundary checks
+
+Real isolated checks additionally cover a lost create response, an existing foreign
+mailbox that must never be adopted, an actual upstream outage during registration
+and password recovery, suspension/re-enable and stale session rejection. Recovery
+requires another verification after an upstream failure; passwords are never queued.
+User application passwords can access mail but cannot mint additional access keys.
+The mail-only permission profile excludes deferred Sieve and vacation interfaces.
+
+Four concurrent requests with one idempotency key produce one submission. After
+simulating loss of the success record, restart reconciliation finds the actual
+submission without sending again. Known quota rejection is distinguished from an
+unknown result. Accepted/pending drafts cannot be edited or submitted with a new key.
+HTML-only messages supply cleaned plain text for replies and forwards; remote images
+and active content are removed from displayed HTML.
+
+Production SMTP checks confirmed shared quota enforcement, durable counters after
+restart and temporary rejection while the policy process is unavailable. The prior
+configured recipient limits were restored after this controlled test.
+
+SQL statements and migrations now reside inside the SQLite persistence engine;
+a static gate prevents business handlers from introducing direct engine SQL. Schema
+migration contents and checksums are unchanged. Future engines require explicit
+implementations and conversion tools, not only another connection string.

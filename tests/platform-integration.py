@@ -1,5 +1,6 @@
 """Real isolated application + Stalwart checks; never accepts production URLs."""
 import base64
+import concurrent.futures
 import http.cookies
 import json
 import os
@@ -145,16 +146,40 @@ admin.api("/admin/users/" + operator["id"], "PATCH", {"enabled": True, "quota_by
 # policy without sending test messages onto the public Internet.
 external = draft(foreign_email, "Quota test " + name)
 key = uuid.uuid4().hex
-submitted = admin.api("/submissions", "POST", {"idempotency_key": key, "draft": external})
+with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+    submission_responses = list(pool.map(lambda _: admin.api("/submissions", "POST", {"idempotency_key": key, "draft": external}), range(4)))
+assert len({item["operationId"] for item in submission_responses}) == 1
+submitted = next(item for item in submission_responses if item["status"] == "submitted")
 assert submitted["status"] == "submitted", submitted
 repeated = admin.api("/submissions", "POST", {"idempotency_key": key, "draft": external})
 assert repeated["operationId"] == submitted["operationId"]
+# Emulate a crash after the upstream accepted the message and before the local
+# success record committed. Reconciliation must query the real submission.
+subprocess.run(["docker", "stop", "mail-web-app-test"], check=True, stdout=subprocess.DEVNULL)
+with sqlite3.connect(ROOT / "data/db/mail-web.sqlite") as db:
+    db.execute("UPDATE operations SET status='unknown' WHERE id=?", (uuid.UUID(submitted["operationId"]).bytes,))
+start()
+assert admin.api("/submissions/" + submitted["operationId"])["status"] == "submitted"
+with database() as db:
+    assert db.execute("SELECT sum(recipient_count) FROM outbound_reservations WHERE user_id=?", (uuid.UUID(operator["id"]).bytes,)).fetchone()[0] == 1
+print("PASS: concurrent submission and restart reconciliation do not duplicate accepted mail")
 with database() as db:
     operator_account = db.execute("SELECT stalwart_id FROM platform_users WHERE email=?", (admin.email,)).fetchone()[0]
 
 basic = "Basic " + base64.b64encode((admin.email + ":" + admin.password).encode()).decode()
 boxes = jmap(basic, "Mailbox/get", {"accountId": operator_account})["list"]
 draft_box = next(item["id"] for item in boxes if item["role"] == "drafts")
+html_id = jmap(basic, "Email/set", {"accountId": operator_account, "create": {"html": {"mailboxIds": {draft_box: True}, "from": [{"email": admin.email}], "to": [{"email": admin.email}], "subject": "HTML only integration", "htmlBody": [{"partId": "h", "type": "text/html"}], "bodyValues": {"h": {"value": '<p>Hello &amp; real HTML</p><script>alert(1)</script><img src="https://outside.invalid/pixel">', "isTruncated": False, "isEncodingProblem": False}}}}})["created"]["html"]["id"]
+html_detail = admin.api("/messages/" + html_id)
+assert "Hello & real HTML" in html_detail["plainText"], {k:html_detail.get(k) for k in ("plainText", "safeHtml", "textBody", "htmlBody")}
+assert "<script" not in html_detail["safeHtml"] and "https://outside.invalid/pixel" not in html_detail["safeHtml"]
+with database() as db:
+    submitted_email = json.loads(db.execute("SELECT result FROM operations WHERE id=?", (uuid.UUID(submitted["operationId"]).bytes,)).fetchone()[0])["emailId"]
+accepted_detail = admin.api("/messages/" + submitted_email)
+assert accepted_detail["submission"]["operationId"] == submitted["operationId"]
+admin.api("/drafts", "POST", {**external, "id": submitted_email}, expected=409)
+print("PASS: HTML-only reply text, active content removal and accepted-draft resubmission guard")
+
 native = jmap(basic, "Email/set", {"accountId": operator_account, "create": {"native": {"mailboxIds": {draft_box: True}, "from": [{"email": admin.email}], "to": [{"email": foreign_email}], "subject": "Native JMAP quota " + name, "textBody": [{"partId": "t", "type": "text/plain"}], "bodyValues": {"t": {"value": "Native JMAP", "isTruncated": False, "isEncodingProblem": False}}}}})["created"]["native"]["id"]
 identity = jmap(basic, "Identity/get", {"accountId": operator_account})["list"][0]["id"]
 jmap(basic, "EmailSubmission/set", {"accountId": operator_account, "create": {"native": {"emailId": native, "identityId": identity}}})
@@ -200,5 +225,9 @@ except smtplib.SMTPDataError as error:
 with database() as db:
     count = db.execute("SELECT sum(recipient_count) FROM outbound_reservations WHERE user_id=?", (uuid.UUID(operator["id"]).bytes,)).fetchone()[0]
 assert count == 3, count
+rejected_key = str(uuid.uuid4())
+denied = admin.api("/submissions", "POST", {"idempotency_key": rejected_key, "draft": draft(foreign_email, "Known quota rejection " + name)})
+assert denied["status"] == "failed", denied["status"]
+assert admin.api("/submissions", "POST", {"idempotency_key": rejected_key, "draft": draft(foreign_email, "Changed rejected request")}, expected=409)["code"] == "idempotency_conflict"
 print("PASS: SMTP shares durable quota; outage fails closed and external incoming remains accepted")
 print("All real isolated platform integration checks passed.")

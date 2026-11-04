@@ -13,19 +13,33 @@ pub fn routes() -> Router<Arc<App>> {
 }
 
 pub async fn settings(app: &App) -> Result<Value> {
-    let value: String =
-        sqlx::query_scalar("SELECT value FROM platform_settings WHERE key='registration'")
-            .fetch_one(&app.db)
-            .await?;
+    let value: String = db::scalar(db::Statement::RegistrationSettingsSelectPlatformSettings)
+        .fetch_one(&app.db)
+        .await?;
     serde_json::from_str(&value)
         .map_err(|_| Error(StatusCode::INTERNAL_SERVER_ERROR, "settings_invalid"))
 }
-#[utoipa::path(get,path="/api/v1/registration/policy",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
-pub(super) async fn public_policy(State(app): State<Arc<App>>) -> Result<Json<Value>> {
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct PublicRegistrationPolicy {
+    enabled: bool,
+    domain: String,
+    site_key: String,
+    maximum_accounts: i64,
+    attachment_bytes: i64,
+}
+#[utoipa::path(get,path="/api/v1/registration/policy",responses((status=200,body=PublicRegistrationPolicy)))]
+pub(super) async fn public_policy(
+    State(app): State<Arc<App>>,
+) -> Result<Json<PublicRegistrationPolicy>> {
     let p = settings(&app).await?;
-    Ok(Json(
-        json!({"enabled":p["enabled"]==true&&app.services.ready(),"domain":"iqwq.com","siteKey":app.services.turnstile_site_key,"maximumAccounts":p["maximumAccounts"]}),
-    ))
+    Ok(Json(PublicRegistrationPolicy {
+        enabled: p["enabled"] == true && app.services.ready(),
+        domain: "iqwq.com".into(),
+        site_key: app.services.turnstile_site_key.clone(),
+        maximum_accounts: p["maximumAccounts"].as_i64().unwrap_or(100),
+        attachment_bytes: p["attachmentBytes"].as_i64().unwrap_or(20971520),
+    }))
 }
 fn address(input: &str) -> bool {
     input.len() <= 254
@@ -132,13 +146,18 @@ pub(super) struct ChallengeInput {
     purpose: String,
     turnstile_token: String,
 }
-#[utoipa::path(post,path="/api/v1/registration/challenges",request_body=ChallengeInput,responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ChallengeView {
+    challenge_id: Uuid,
+}
+#[utoipa::path(post,path="/api/v1/registration/challenges",request_body=ChallengeInput,responses((status=200,body=ChallengeView),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn challenge(
     State(app): State<Arc<App>>,
     axum::extract::ConnectInfo(peer): axum::extract::ConnectInfo<std::net::SocketAddr>,
     headers: HeaderMap,
     Json(input): Json<ChallengeInput>,
-) -> Result<Json<Value>> {
+) -> Result<Json<ChallengeView>> {
     same_origin(&app, &headers)?;
     policy::rate(
         &app,
@@ -169,7 +188,14 @@ pub(super) async fn challenge(
     let id = Uuid::new_v4();
     let code = format!("{:06}", rand::thread_rng().gen_range(0..1000000));
     let digest = hash(&format!("{id}:{code}:{}", app.services.turnstile_secret));
-    sqlx::query("INSERT INTO verification_challenges(id,email,purpose,code_hash,expires_at) VALUES (?,?,?,?,?)").bind(id).bind(&email).bind(&input.purpose).bind(digest).bind(db::now()+600000).execute(&app.db).await?;
+    db::query(db::Statement::RegistrationChallengeInsertVerificationChallenges)
+        .bind(id)
+        .bind(&email)
+        .bind(&input.purpose)
+        .bind(digest)
+        .bind(db::now() + 600000)
+        .execute(&app.db)
+        .await?;
     notify(
         &app,
         &email,
@@ -177,22 +203,32 @@ pub(super) async fn challenge(
         &format!("你的验证码为 {code}，10 分钟内有效。如非本人操作，请忽略此邮件。"),
     )
     .await?;
-    Ok(Json(json!({"challengeId":id})))
+    Ok(Json(ChallengeView { challenge_id: id }))
 }
 #[derive(Deserialize, ToSchema)]
 pub(super) struct VerifyInput {
     challenge_id: Uuid,
     code: String,
 }
-#[utoipa::path(post,path="/api/v1/registration/verify",request_body=VerifyInput,responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
+#[derive(Serialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct VerificationView {
+    challenge_id: Uuid,
+    verification_token: String,
+}
+#[utoipa::path(post,path="/api/v1/registration/verify",request_body=VerifyInput,responses((status=200,body=VerificationView),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn verify(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
     Json(input): Json<VerifyInput>,
-) -> Result<Json<Value>> {
+) -> Result<Json<VerificationView>> {
     same_origin(&app, &headers)?;
-    let row=sqlx::query("UPDATE verification_challenges SET attempts=attempts+1 WHERE id=? AND expires_at>? AND attempts<5 AND consumed_at IS NULL AND verified_at IS NULL RETURNING code_hash")
-        .bind(input.challenge_id).bind(db::now()).fetch_optional(&app.db).await?.ok_or(Error(StatusCode::BAD_REQUEST,"challenge_expired"))?;
+    let row = db::query(db::Statement::RegistrationVerifyUpdateVerificationChallenges)
+        .bind(input.challenge_id)
+        .bind(db::now())
+        .fetch_optional(&app.db)
+        .await?
+        .ok_or(Error(StatusCode::BAD_REQUEST, "challenge_expired"))?;
     let digest = hash(&format!(
         "{}:{}:{}",
         input.challenge_id, input.code, app.services.turnstile_secret
@@ -205,13 +241,19 @@ pub(super) async fn verify(
         return Err(Error(StatusCode::BAD_REQUEST, "code_invalid"));
     }
     let claim = token();
-    let updated=sqlx::query("UPDATE verification_challenges SET verified_at=?,claim_hash=? WHERE id=? AND verified_at IS NULL AND consumed_at IS NULL").bind(db::now()).bind(hash(&claim)).bind(input.challenge_id).execute(&app.db).await?;
+    let updated = db::query(db::Statement::RegistrationVerifyUpdateVerificationChallenges2)
+        .bind(db::now())
+        .bind(hash(&claim))
+        .bind(input.challenge_id)
+        .execute(&app.db)
+        .await?;
     if updated.rows_affected() != 1 {
         return Err(Error(StatusCode::CONFLICT, "challenge_already_used"));
     }
-    Ok(Json(
-        json!({"challengeId":input.challenge_id,"verificationToken":claim}),
-    ))
+    Ok(Json(VerificationView {
+        challenge_id: input.challenge_id,
+        verification_token: claim,
+    }))
 }
 #[utoipa::path(get,path="/api/v1/registration/availability",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn availability(
@@ -223,7 +265,7 @@ pub(super) async fn availability(
     if !local_part(name) {
         return Ok(Json(json!({"available":false})));
     }
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM platform_users WHERE email=?")
+    let count: i64 = db::scalar(db::Statement::RegistrationAvailabilitySelectPlatformUsers)
         .bind(format!("{name}@iqwq.com"))
         .fetch_one(&app.db)
         .await?;
@@ -251,11 +293,18 @@ pub(super) async fn register(
         return Err(Error(StatusCode::BAD_REQUEST, "registration_input_invalid"));
     }
     let email = format!("{}@iqwq.com", input.name);
-    let mut tx = app.db.begin_with("BEGIN IMMEDIATE").await?;
-    let challenge=sqlx::query("SELECT email FROM verification_challenges WHERE id=? AND purpose='registration' AND claim_hash=? AND verified_at IS NOT NULL AND expires_at>?")
-        .bind(input.challenge_id).bind(hash(&input.verification_token)).bind(db::now()).fetch_optional(&mut *tx).await?.ok_or(Error(StatusCode::BAD_REQUEST,"verification_required"))?;
-    let existing = sqlx::query("SELECT id,email,status FROM platform_users WHERE challenge_id=? OR (email=? AND recovery_email=? AND status='provisioning')")
-        .bind(input.challenge_id).bind(&email).bind(challenge.get::<String,_>("email"))
+    let mut tx = db::begin(&app.db).await?;
+    let challenge = db::query(db::Statement::RegistrationRegisterSelectVerificationChallenges)
+        .bind(input.challenge_id)
+        .bind(hash(&input.verification_token))
+        .bind(db::now())
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(Error(StatusCode::BAD_REQUEST, "verification_required"))?;
+    let existing = db::query(db::Statement::RegistrationRegisterSelectPlatformUsers)
+        .bind(input.challenge_id)
+        .bind(&email)
+        .bind(challenge.get::<String, _>("email"))
         .fetch_optional(&mut *tx)
         .await?;
     let user = if let Some(row) = existing {
@@ -267,17 +316,33 @@ pub(super) async fn register(
         }
         row.get::<Uuid, _>("id")
     } else {
-        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM platform_users WHERE operator=0")
+        let count: i64 = db::scalar(db::Statement::RegistrationRegisterSelectPlatformUsers2)
             .fetch_one(&mut *tx)
             .await?;
         if count >= p["maximumAccounts"].as_i64().unwrap_or(100) {
             return Err(Error(StatusCode::FORBIDDEN, "registration_full"));
         }
         let id = Uuid::new_v4();
-        sqlx::query("INSERT INTO platform_users(id,email,recovery_email,status,challenge_id,hourly_recipients,daily_recipients,quota_bytes) VALUES (?,?,?,'provisioning',?,?,?,?)").bind(id).bind(&email).bind(challenge.get::<String,_>("email")).bind(input.challenge_id).bind(p["hourlyRecipients"].as_i64().unwrap_or(10)).bind(p["dailyRecipients"].as_i64().unwrap_or(50)).bind(p["quotaBytes"].as_i64().unwrap_or(1073741824)).execute(&mut *tx).await.map_err(|_|Error(StatusCode::CONFLICT,"address_unavailable"))?;
+        db::query(db::Statement::RegistrationRegisterInsertPlatformUsers)
+            .bind(id)
+            .bind(&email)
+            .bind(challenge.get::<String, _>("email"))
+            .bind(input.challenge_id)
+            .bind(p["hourlyRecipients"].as_i64().unwrap_or(10))
+            .bind(p["dailyRecipients"].as_i64().unwrap_or(50))
+            .bind(p["quotaBytes"].as_i64().unwrap_or(1073741824))
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| Error(StatusCode::CONFLICT, "address_unavailable"))?;
         id
     };
-    let leased=sqlx::query("UPDATE platform_users SET provisioning_lease=?,challenge_id=? WHERE id=? AND provisioning_lease<=?").bind(db::now()+180000).bind(input.challenge_id).bind(user).bind(db::now()).execute(&mut *tx).await?;
+    let leased = db::query(db::Statement::RegistrationRegisterUpdatePlatformUsers)
+        .bind(db::now() + 180000)
+        .bind(input.challenge_id)
+        .bind(user)
+        .bind(db::now())
+        .execute(&mut *tx)
+        .await?;
     if leased.rows_affected() != 1 {
         return Err(Error(
             StatusCode::CONFLICT,
@@ -315,29 +380,31 @@ pub(super) async fn register(
                 // A confirmed foreign mailbox was never created by this operation.
                 // Release only our empty reservation so the verified user can
                 // choose another address. Never mutate the foreign account.
-                sqlx::query("DELETE FROM platform_users WHERE id=? AND status='provisioning' AND stalwart_id IS NULL")
-                    .bind(user).execute(&app.db).await?;
+                db::query(db::Statement::RegistrationRegisterDeletePlatformUsers)
+                    .bind(user)
+                    .execute(&app.db)
+                    .await?;
                 return Err(Error(StatusCode::CONFLICT, "upstream_address_exists"));
             }
             upstream_id = record["id"].as_str().map(str::to_owned);
         }
     }
     if upstream_id.is_none() {
-        let created=app.upstream.call(&app.services.provisioning_key,"x:Account/set",json!({"create":{"user":{"@type":"User","name":input.name,"domainId":app.services.domain_id,"description":marker,"permissions":{"@type":"Merge","disabledPermissions":{"authenticate":true,"emailSend":true}},"roles":{"@type":"User"},"credentials":{"0":{"@type":"Password","secret":input.password}},"quotas":{"maxDiskQuota":p["quotaBytes"].as_i64().unwrap_or(1073741824),"maxApiKeys":64}}}})).await?;
+        let created=app.upstream.call(&app.services.provisioning_key,"x:Account/set",json!({"create":{"user":{"@type":"User","name":input.name,"domainId":app.services.domain_id,"description":marker,"permissions":account::user_permissions(false),"roles":{"@type":"User"},"credentials":{"0":{"@type":"Password","secret":input.password}},"quotas":{"maxDiskQuota":p["quotaBytes"].as_i64().unwrap_or(1073741824),"maxApiKeys":64}}}})).await?;
         upstream_id = created["created"]["user"]["id"].as_str().map(str::to_owned);
     }
     let upstream_id = upstream_id.ok_or(Error(
         StatusCode::BAD_GATEWAY,
         "provisioning_result_unknown",
     ))?;
-    sqlx::query("UPDATE platform_users SET stalwart_id=? WHERE id=? AND status='provisioning'")
+    db::query(db::Statement::RegistrationRegisterUpdatePlatformUsers2)
         .bind(&upstream_id)
         .bind(user)
         .execute(&app.db)
         .await?;
     policy::sync_scope(&app).await?;
     let mut activation = json!({});
-    activation[&upstream_id] = json!({"permissions":{"@type":"Inherit"}});
+    activation[&upstream_id] = json!({"permissions":account::user_permissions(true)});
     app.upstream
         .call(
             &app.services.provisioning_key,
@@ -348,9 +415,13 @@ pub(super) async fn register(
     app.upstream
         .password_call(&email, &input.password, "Core/echo", json!({"proof":true}))
         .await?;
-    let mut tx = app.db.begin_with("BEGIN IMMEDIATE").await?;
-    sqlx::query("UPDATE platform_users SET stalwart_id=?,status='active',provisioning_lease=0 WHERE id=? AND status='provisioning'").bind(upstream_id).bind(user).execute(&mut *tx).await?;
-    sqlx::query("UPDATE verification_challenges SET consumed_at=? WHERE id=?")
+    let mut tx = db::begin(&app.db).await?;
+    db::query(db::Statement::RegistrationRegisterUpdatePlatformUsers3)
+        .bind(upstream_id)
+        .bind(user)
+        .execute(&mut *tx)
+        .await?;
+    db::query(db::Statement::RegistrationRegisterUpdateVerificationChallenges)
         .bind(db::now())
         .bind(input.challenge_id)
         .execute(&mut *tx)
@@ -374,14 +445,18 @@ pub(super) async fn recover(
     if !(12..=128).contains(&input.password.chars().count()) {
         return Err(Error(StatusCode::BAD_REQUEST, "password_invalid"));
     }
-    let row=sqlx::query("UPDATE verification_challenges SET consumed_at=? WHERE id=? AND purpose='recovery' AND claim_hash=? AND verified_at IS NOT NULL AND consumed_at IS NULL AND expires_at>? RETURNING email")
-        .bind(db::now()).bind(input.challenge_id).bind(hash(&input.verification_token)).bind(db::now()).fetch_optional(&app.db).await?.ok_or(Error(StatusCode::BAD_REQUEST,"verification_required"))?;
-    if let Some(user) = sqlx::query(
-        "SELECT id,stalwart_id FROM platform_users WHERE recovery_email=? AND status='active'",
-    )
-    .bind(row.get::<String, _>("email"))
-    .fetch_optional(&app.db)
-    .await?
+    let row = db::query(db::Statement::RegistrationRecoverUpdateVerificationChallenges)
+        .bind(db::now())
+        .bind(input.challenge_id)
+        .bind(hash(&input.verification_token))
+        .bind(db::now())
+        .fetch_optional(&app.db)
+        .await?
+        .ok_or(Error(StatusCode::BAD_REQUEST, "verification_required"))?;
+    if let Some(user) = db::query(db::Statement::RegistrationRecoverSelectPlatformUsers)
+        .bind(row.get::<String, _>("email"))
+        .fetch_optional(&app.db)
+        .await?
     {
         let user_id: Uuid = user.get("id");
         let upstream: String = user.get("stalwart_id");

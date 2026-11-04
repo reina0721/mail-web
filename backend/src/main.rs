@@ -22,7 +22,7 @@ use chrono::{Duration, Utc};
 use crypto::{Vault, hash, token};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sqlx::{Row, SqlitePool};
+use sqlx::Row;
 use stalwart::Stalwart;
 use std::{collections::HashMap, sync::Arc};
 use tower_http::services::ServeDir;
@@ -31,7 +31,7 @@ use uuid::Uuid;
 
 #[derive(Clone)]
 struct App {
-    db: SqlitePool,
+    db: db::Pool,
     upstream: Stalwart,
     vault: Vault,
     origin: String,
@@ -78,13 +78,16 @@ async fn account_lock(account: &str) -> tokio::sync::MutexGuard<'static, ()> {
 }
 
 async fn revoke_user(app: &App, user: Uuid) -> Result<()> {
-    let mut tx = app.db.begin().await?;
-    sqlx::query("UPDATE sessions SET revoked_at=? WHERE user_id=?")
+    let mut tx = db::begin(&app.db).await?;
+    db::query(db::Statement::MainRevokeUserUpdateSessions)
         .bind(db::now())
         .bind(user)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("INSERT OR IGNORE INTO credential_revocations(session_hash) SELECT id_hash FROM sessions WHERE user_id=?").bind(user).execute(&mut *tx).await?;
+    db::query(db::Statement::MainRevokeUserInsertCredentialRevocations)
+        .bind(user)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     account::JOB_NOTIFY.notify_one();
     Ok(())
@@ -138,8 +141,11 @@ async fn identify(app: &App, headers: &HeaderMap, write: bool, touch: bool) -> R
     let sid = cookie(headers, "__Host-mail_session")
         .ok_or(Error(StatusCode::UNAUTHORIZED, "session_required"))?;
     let sid = hash(&sid);
-    let row=sqlx::query("SELECT s.upstream_key,s.csrf_hash,u.id,u.email,u.stalwart_id,u.operator FROM sessions s JOIN platform_users u ON u.id=s.user_id WHERE s.id_hash=$1 AND s.revoked_at IS NULL AND s.expires_at>(CAST(unixepoch('subsec')*1000 AS INTEGER)) AND s.last_seen>(CAST(unixepoch('subsec')*1000 AS INTEGER)-1800000) AND u.status='active'")
-        .bind(&sid).fetch_optional(&app.db).await?.ok_or(Error(StatusCode::UNAUTHORIZED,"session_expired"))?;
+    let row = db::query(db::Statement::MainIdentifySelectSessions)
+        .bind(&sid)
+        .fetch_optional(&app.db)
+        .await?
+        .ok_or(Error(StatusCode::UNAUTHORIZED, "session_expired"))?;
     if write {
         same_origin(app, headers)?;
         let csrf = headers
@@ -154,7 +160,10 @@ async fn identify(app: &App, headers: &HeaderMap, write: bool, touch: bool) -> R
     let key = String::from_utf8(app.vault.open(&secret).map_err(internal)?)
         .map_err(|_| internal("utf8"))?;
     if touch {
-        sqlx::query("UPDATE sessions SET last_seen=(CAST(unixepoch('subsec')*1000 AS INTEGER)) WHERE id_hash=$1").bind(&sid).execute(&app.db).await?;
+        db::query(db::Statement::MainIdentifyUpdateSessions)
+            .bind(&sid)
+            .execute(&app.db)
+            .await?;
     }
     Ok(Identity {
         user: row.get("id"),
@@ -204,13 +213,11 @@ async fn login(
     if input.password.len() > 512 || input.email.len() > 254 {
         return Err(Error(StatusCode::BAD_REQUEST, "input_invalid"));
     }
-    let row = sqlx::query(
-        "SELECT id,email,stalwart_id FROM platform_users WHERE email=$1 AND status='active'",
-    )
-    .bind(input.email.to_lowercase())
-    .fetch_optional(&app.db)
-    .await?
-    .ok_or(Error(StatusCode::UNAUTHORIZED, "credentials_invalid"))?;
+    let row = db::query(db::Statement::MainLoginSelectPlatformUsers)
+        .bind(input.email.to_lowercase())
+        .fetch_optional(&app.db)
+        .await?
+        .ok_or(Error(StatusCode::UNAUTHORIZED, "credentials_invalid"))?;
     let email: String = row.get("email");
     let _account_guard = account_lock(&row.get::<String, _>("stalwart_id")).await;
     let expires = Utc::now() + Duration::hours(8);
@@ -224,8 +231,15 @@ async fn login(
         .as_str()
         .ok_or(Error(StatusCode::BAD_GATEWAY, "credential_not_returned"))?;
     let secret = app.vault.seal(key.as_bytes()).map_err(internal)?;
-    let stored=sqlx::query("INSERT INTO sessions(id_hash,user_id,csrf_hash,upstream_key,upstream_key_id,expires_at) SELECT $1,$2,$3,$4,$5,$6 WHERE EXISTS (SELECT 1 FROM platform_users WHERE id=$2 AND status='active')")
-        .bind(hash(&id)).bind(row.get::<Uuid,_>("id")).bind(hash(&csrf)).bind(secret).bind(keyid).bind(expires.timestamp_millis()).execute(&app.db).await;
+    let stored = db::query(db::Statement::MainLoginInsertSessions)
+        .bind(hash(&id))
+        .bind(row.get::<Uuid, _>("id"))
+        .bind(hash(&csrf))
+        .bind(secret)
+        .bind(keyid)
+        .bind(expires.timestamp_millis())
+        .execute(&app.db)
+        .await;
     if stored
         .as_ref()
         .map_or(true, |result| result.rows_affected() != 1)
@@ -272,14 +286,15 @@ async fn session(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json
 #[utoipa::path(post,path="/api/v1/auth/logout",responses((status=200,body=Value),(status=204,description="Completed")))]
 async fn logout(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Response> {
     let me = identity(&app, &headers, true).await?;
-    let mut tx = app.db.begin().await?;
-    sqlx::query("UPDATE sessions SET revoked_at=(CAST(unixepoch('subsec')*1000 AS INTEGER)) WHERE id_hash=$1").bind(&me.session).execute(&mut *tx).await?;
-    sqlx::query(
-        "INSERT INTO credential_revocations(session_hash) VALUES ($1) ON CONFLICT DO NOTHING",
-    )
-    .bind(&me.session)
-    .execute(&mut *tx)
-    .await?;
+    let mut tx = db::begin(&app.db).await?;
+    db::query(db::Statement::MainLogoutUpdateSessions)
+        .bind(&me.session)
+        .execute(&mut *tx)
+        .await?;
+    db::query(db::Statement::MainLogoutInsertCredentialRevocations)
+        .bind(&me.session)
+        .execute(&mut *tx)
+        .await?;
     tx.commit().await?;
     account::JOB_NOTIFY.notify_one();
     let mut response = StatusCode::NO_CONTENT.into_response();
@@ -350,6 +365,7 @@ async fn message(
         .map(|parts| {
             parts
                 .iter()
+                .filter(|part| part["type"] == "text/plain")
                 .filter_map(|p| {
                     p["partId"]
                         .as_str()
@@ -361,14 +377,21 @@ async fn message(
         .unwrap_or_default();
     msg["plainText"] = json!(plain);
     if let Some(parts) = msg["attachments"].as_array() {
-        let mut tx = app.db.begin().await?;
+        let mut tx = db::begin(&app.db).await?;
         for part in parts {
             if let (Some(blob), Some(size), Some(kind)) = (
                 part["blobId"].as_str(),
                 part["size"].as_i64(),
                 part["type"].as_str(),
             ) {
-                sqlx::query("INSERT INTO upload_ownership(user_id,blob_id,size,type,created_at) VALUES (?,?,?,?,?) ON CONFLICT(user_id,blob_id) DO UPDATE SET size=excluded.size,type=excluded.type").bind(me.user).bind(blob).bind(size).bind(kind).bind(db::now()).execute(&mut *tx).await?;
+                db::query(db::Statement::MainMessageInsertUploadOwnership)
+                    .bind(me.user)
+                    .bind(blob)
+                    .bind(size)
+                    .bind(kind)
+                    .bind(db::now())
+                    .execute(&mut *tx)
+                    .await?;
             }
         }
         tx.commit().await?;
@@ -380,7 +403,16 @@ async fn message(
         .and_then(|p| p["partId"].as_str())
         .and_then(|part| msg["bodyValues"][part]["value"].as_str());
     if let Some(html) = html {
-        msg["safeHtml"] = json!(safe_html(html));
+        let cleaned = safe_html(html);
+        if msg["plainText"]
+            .as_str()
+            .unwrap_or_default()
+            .trim()
+            .is_empty()
+        {
+            msg["plainText"] = json!(html_to_plain(&cleaned));
+        }
+        msg["safeHtml"] = json!(cleaned);
     }
     // Expose only the sanitized HTML; raw HTML body values never reach callers.
     if let Some(parts) = msg["htmlBody"].as_array().cloned() {
@@ -389,6 +421,14 @@ async fn message(
                 msg["bodyValues"][id] = Value::Null;
             }
         }
+    }
+    if let Some(operation) = db::query(db::Statement::MainMessageSubmission)
+        .bind(me.user)
+        .bind(&id)
+        .fetch_optional(&app.db)
+        .await?
+    {
+        msg["submission"] = json!({"operationId":operation.get::<Uuid,_>("id"),"status":operation.get::<String,_>("status")});
     }
     Ok(Json(msg))
 }
@@ -436,8 +476,12 @@ fn safe_html(input: &str) -> String {
             "img", "picture", "source", "style", "form", "input", "video", "audio",
         ])
         .link_rel(Some("noopener noreferrer"))
+        .set_tag_attribute_value("a", "target", "_blank")
         .clean(input)
         .to_string()
+}
+fn html_to_plain(cleaned: &str) -> String {
+    html2text::from_read(cleaned.as_bytes(), 100).unwrap_or_default()
 }
 async fn response_policy(
     request: axum::extract::Request,
@@ -467,7 +511,9 @@ async fn response_policy(
 }
 #[utoipa::path(get,path="/api/v1/health/ready",responses((status=200,body=Value),(status=204,description="Completed")))]
 async fn health(State(app): State<Arc<App>>) -> Result<Json<Value>> {
-    sqlx::query("SELECT 1").execute(&app.db).await?;
+    db::query(db::Statement::MainHealthSelectValue)
+        .execute(&app.db)
+        .await?;
     Ok(Json(json!({"status":"ok"})))
 }
 
@@ -503,6 +549,7 @@ async fn health(State(app): State<Arc<App>>) -> Result<Json<Value>> {
         account::put_settings,
         account::audit,
         account::tasks,
+        account::retry_tasks,
         mail::create_mailbox,
         mail::rename_mailbox,
         mail::delete_mailbox,
@@ -577,9 +624,18 @@ async fn revocations(app: Arc<App>) {
         }
         for _ in 0..20 {
             let lease = db::now() + 60000;
-            let claimed=sqlx::query_scalar::<_,String>("UPDATE credential_revocations SET lease_until=? WHERE session_hash=(SELECT session_hash FROM credential_revocations WHERE next_attempt<=? AND lease_until<=? LIMIT 1) RETURNING session_hash").bind(lease).bind(db::now()).bind(db::now()).fetch_optional(&app.db).await;
+            let claimed =
+                db::scalar::<String>(db::Statement::MainRevocationsUpdateCredentialRevocations)
+                    .bind(lease)
+                    .bind(db::now())
+                    .bind(db::now())
+                    .fetch_optional(&app.db)
+                    .await;
             let Ok(Some(sid)) = claimed else { break };
-            let row=sqlx::query("SELECT s.upstream_key,s.upstream_key_id,u.stalwart_id FROM sessions s JOIN platform_users u ON u.id=s.user_id WHERE s.id_hash=?").bind(&sid).fetch_optional(&app.db).await;
+            let row = db::query(db::Statement::MainRevocationsSelectSessions)
+                .bind(&sid)
+                .fetch_optional(&app.db)
+                .await;
             if let Ok(Some(row)) = row {
                 let _account_guard = account_lock(&row.get::<String, _>("stalwart_id")).await;
                 if revoke_upstream(
@@ -591,21 +647,33 @@ async fn revocations(app: Arc<App>) {
                 )
                 .await
                 {
-                    let _ = sqlx::query(
-                        "DELETE FROM credential_revocations WHERE session_hash=? AND lease_until=?",
-                    )
-                    .bind(&sid)
-                    .bind(lease)
-                    .execute(&app.db)
-                    .await;
+                    let _ = db::query(db::Statement::MainRevocationsDeleteCredentialRevocations)
+                        .bind(&sid)
+                        .bind(lease)
+                        .execute(&app.db)
+                        .await;
                 } else {
-                    let _=sqlx::query("UPDATE credential_revocations SET attempts=attempts+1,lease_until=0,next_attempt=?,last_error='upstream_unavailable' WHERE session_hash=? AND lease_until=?").bind(db::now()+60000).bind(&sid).bind(lease).execute(&app.db).await;
+                    let _ = db::query(db::Statement::MainRevocationsUpdateCredentialRevocations2)
+                        .bind(db::now() + 60000)
+                        .bind(&sid)
+                        .bind(lease)
+                        .execute(&app.db)
+                        .await;
                 }
             }
         }
-        if let Ok(mut tx) = app.db.begin().await {
-            let _=sqlx::query("INSERT OR IGNORE INTO credential_revocations(session_hash) SELECT id_hash FROM sessions WHERE revoked_at IS NULL AND (expires_at<=? OR last_seen<=?)").bind(db::now()).bind(db::now()-1800000).execute(&mut *tx).await;
-            let _=sqlx::query("UPDATE sessions SET revoked_at=? WHERE revoked_at IS NULL AND (expires_at<=? OR last_seen<=?)").bind(db::now()).bind(db::now()).bind(db::now()-1800000).execute(&mut *tx).await;
+        if let Ok(mut tx) = db::begin(&app.db).await {
+            let _ = db::query(db::Statement::MainRevocationsInsertCredentialRevocations)
+                .bind(db::now())
+                .bind(db::now() - 1800000)
+                .execute(&mut *tx)
+                .await;
+            let _ = db::query(db::Statement::MainRevocationsUpdateSessions)
+                .bind(db::now())
+                .bind(db::now())
+                .bind(db::now() - 1800000)
+                .execute(&mut *tx)
+                .await;
             let _ = tx.commit().await;
         }
         tokio::select! {_=tokio::time::sleep(std::time::Duration::from_secs(30))=>{},_=account::JOB_NOTIFY.notified()=>{}}
@@ -626,10 +694,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     if args.iter().any(|a| a == "--runtime-info") {
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await?;
-        let sqlite: String = sqlx::query_scalar("SELECT sqlite_version()")
-            .fetch_one(&pool)
-            .await?;
+        let sqlite = db::version().await?;
         println!(
             "{}",
             json!({"version":env!("CARGO_PKG_VERSION"),"sqlite":sqlite})
@@ -638,9 +703,11 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     }
     if args.iter().any(|a| a == "--revoke-all-sessions") {
         let pool = db::connect(std::path::Path::new(&std::env::var("DATABASE_PATH")?)).await?;
-        let mut tx = pool.begin().await?;
-        sqlx::query("INSERT OR IGNORE INTO credential_revocations(session_hash) SELECT id_hash FROM sessions WHERE revoked_at IS NULL").execute(&mut *tx).await?;
-        sqlx::query("UPDATE sessions SET revoked_at=? WHERE revoked_at IS NULL")
+        let mut tx = db::begin(&pool).await?;
+        db::query(db::Statement::MainMainInsertCredentialRevocations)
+            .execute(&mut *tx)
+            .await?;
+        db::query(db::Statement::MainMainUpdateSessions)
             .bind(db::now())
             .execute(&mut *tx)
             .await?;
@@ -697,6 +764,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .await?;
         return Ok(());
     }
+    account::initialize_permission_policy(&app).await?;
     mail::clean_staging(std::path::Path::new(
         &std::env::var("STAGING_DIR").unwrap_or_else(|_| "data/staging".into()),
     ))

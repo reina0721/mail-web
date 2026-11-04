@@ -15,6 +15,8 @@ pub enum UpstreamError {
     Authentication,
     #[error("upstream rejected operation")]
     Rejected,
+    #[error("upstream confirmed object rejection")]
+    ObjectRejected,
     #[error("unexpected upstream response")]
     Protocol,
 }
@@ -117,7 +119,7 @@ impl Stalwart {
                         "upstream_object_rejected"
                     );
                 }
-                return Err(UpstreamError::Rejected);
+                return Err(UpstreamError::ObjectRejected);
             }
         }
         Ok(result)
