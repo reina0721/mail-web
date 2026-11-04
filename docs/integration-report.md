@@ -84,3 +84,48 @@ SQL statements and migrations now reside inside the SQLite persistence engine;
 a static gate prevents business handlers from introducing direct engine SQL. Schema
 migration contents and checksums are unchanged. Future engines require explicit
 implementations and conversion tools, not only another connection string.
+
+## Attachment and browser observations
+
+A 20MiB attachment was accepted by the real application and Stalwart. A one-byte
+oversize upload and a draft with aggregate attachment size above 20MiB both returned
+413. The staging directory was empty afterwards. Sampled process peak RSS was
+30,576KiB in this debug-build isolated run; this is not a release capacity benchmark.
+
+The actual React UI saved a draft, reloaded, reopened the Stalwart draft and resumed
+editing through keyboard activation. The operations policy form saved successfully
+while registration remained closed. A 390x844 viewport showed the account page in
+dark mode, and the saved theme returned after a full reload. These focused checks
+are not a claim of complete screen-reader, browser or device accessibility coverage.
+
+## Published v0.1.0-alpha.3 and production update
+
+[Workflow 41916857338](https://github.com/reina0721/mail-web/actions/runs/41916857338)
+passed all checks and the post-publication direct-download install/restore rehearsal.
+The deployed image was downloaded, checksum-checked and loaded from that Release.
+Production upgraded from alpha.1 with a consistent pre-update snapshot; the container
+is healthy on 127.0.0.1:18090. Existing operator login and the external reply were
+verified again. SMTP quota, policy outage and restart persistence were retested and
+10/hour, 50/day limits restored. Public registration is still closed.
+
+Forty real authenticated list calls at concurrency four on alpha.3 measured median
+1.44ms, p95 32.13ms and maximum 32.85ms. Sampled idle memory was 7.09MiB and memory
+after the calls 7.898MiB, CPU 0.00%. This narrow local observation does not establish
+sustained capacity or a percentage improvement over the earlier run.
+
+A further isolated test submitted a 20MiB attachment successfully through Stalwart.
+Including upload and submission, sampled debug-process peak RSS was 89,244KiB;
+the earlier 30,576KiB figure covered upload/rejection only. Neither is a production
+load guarantee. Both oversize checks still returned 413 and staging was empty.
+
+Final operator credentials were rotated through the user's own account API. The
+previous password and website sessions were rejected. The protected handoff resides
+outside the repository on the owner's computer; the temporary server plaintext was
+removed. Final snapshots retain identity associations, policies, counters, operations
+and migration history. Historical backups can contain the now-invalid bootstrap
+password and remain sensitive.
+
+The production hostname/HTTPS proxy and actual production Turnstile token flow are
+not yet accepted. DNS, Nginx and certificate changes are outside the authorized work
+scope. Browser/device and screen-reader coverage remains limited to the focused
+checks above. No stable release or open public registration is claimed.

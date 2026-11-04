@@ -10,7 +10,7 @@
 
 ```sh
 curl -fSL https://raw.githubusercontent.com/reina0721/mail-web/main/deploy/install.sh -o install-mail-web.sh
-sh install-mail-web.sh v0.1.0-alpha.1
+sh install-mail-web.sh v0.1.0-alpha.3
 # 或省略版本，使用最新稳定版；尚无稳定版时明确失败。
 ```
 
@@ -40,7 +40,7 @@ Compose 仅使用 `./data`、`./logs`、`./config`、`./secrets`、`./backups` �
 docker compose run --rm --no-deps --pull never mail-web --init-operator operator@iqwq.com your-existing-external@example.net /app/secrets/operator.initial-password
 ```
 
-请替换外部邮箱；运营角色只存在于平台，Stalwart 中仍是普通邮箱用户。命令在上游结果不明时保留待核对记录，不自动接管、删除或重复创建账号。
+请替换外部邮箱；运营角色只存在于平台，Stalwart 中仍是普通邮箱用户。命令在上游结果不明时保留待核对记录，不自动接管、删除或重复创建账号。初始化后应改密并移走服务器上的初始密码文件；应用运行不需要该文件。
 
 ## 身份和邮件
 
@@ -57,7 +57,7 @@ docker compose run --rm --no-deps --pull never mail-web --init-operator operator
 ```sh
 sh /workapps/mail-web/deploy/mail-web.sh status
 sh /workapps/mail-web/deploy/mail-web.sh backup
-sh /workapps/mail-web/deploy/mail-web.sh update v0.1.0-alpha.2
+sh /workapps/mail-web/deploy/mail-web.sh update v0.1.0-alpha.3
 sh /workapps/mail-web/deploy/mail-web.sh restore /workapps/mail-web/backups/<snapshot>
 ```
 
