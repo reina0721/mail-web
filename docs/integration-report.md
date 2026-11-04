@@ -30,3 +30,32 @@ The release check also validates Rust formatting, Clippy, unit tests, generated
 OpenAPI/client consistency, frontend type checking/static export and inherited
 frontend boundary fixtures. Public registration remains closed until all
 remaining checks in `acceptance.json` are complete.
+
+## Production observations
+
+Release `v0.1.0-alpha.1` was downloaded from GitHub, checked against its release
+checksums, imported with `docker load` and started with pulls disabled at
+`/workapps/mail-web`. All five persistent bind mounts resolve inside this
+directory. The application is bound only to `127.0.0.1:18090`.
+
+A message submitted through the production platform received
+[Mail-tester 10/10](https://mail-tester.com/test-e7us9l9zt), with SPF, DKIM,
+DMARC and IP/hostname association passing. A separate submission to Port25's
+authentication verifier received an Internet reply, which was read through
+the platform's own message API. These are specific delivery observations,
+not a guarantee of inbox placement at every provider.
+
+A small observation of the release container recorded 7.324 MiB idle memory
+and 0.00% sampled CPU. Forty authenticated list requests at concurrency four
+had median 41.78 ms, p95 1472.32 ms and maximum 1679.49 ms; memory after the run
+was 7.777 MiB. This is one mailbox on this server, not a 100-user capacity
+benchmark. The report deliberately includes the slow requests.
+
+The install/restore rehearsal exposed two deployment-tool defects: stopped
+instances could not produce a pre-update backup, and new restore directories
+left logs owned by root. The tools now use a one-shot backup container when
+stopped, stop writes before update snapshots, restore writable-directory
+ownership and update the installed manager atomically. The revised manager
+passed clean/repeated installation, consistent backup, empty-directory
+restore, missing-image failure and execution from `/tmp` against the first
+release image. Packaged-version validation is repeated for the next release.

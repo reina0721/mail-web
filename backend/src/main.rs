@@ -262,7 +262,7 @@ async fn login(
 
 #[utoipa::path(get,path="/api/v1/auth/session",responses((status=200,body=SessionView),(status=401,description="No active session")))]
 async fn session(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<SessionView>> {
-    let me = identity(&app, &headers, false).await?;
+    let me = identify(&app, &headers, false, false).await?;
     Ok(Json(SessionView {
         id: me.user,
         email: me.email,
@@ -296,7 +296,7 @@ async fn logout(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Respo
 
 #[utoipa::path(get,path="/api/v1/mailboxes",responses((status=200,body=Value),(status=204,description="Completed")))]
 async fn mailboxes(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
-    let me = identity(&app, &headers, false).await?;
+    let me = identify(&app, &headers, false, false).await?;
     Ok(Json(
         app.upstream
             .call(&me.key, "Mailbox/get", json!({"accountId":me.account}))
@@ -309,7 +309,7 @@ async fn messages(
     headers: HeaderMap,
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>> {
-    let me = identity(&app, &headers, false).await?;
+    let me = identify(&app, &headers, false, false).await?;
     let mut filter = json!({});
     if let Some(mailbox) = query.get("mailbox") {
         filter["inMailbox"] = json!(mailbox);
@@ -697,6 +697,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .await?;
         return Ok(());
     }
+    mail::clean_staging(std::path::Path::new(
+        &std::env::var("STAGING_DIR").unwrap_or_else(|_| "data/staging".into()),
+    ))
+    .await?;
     tokio::spawn(revocations(app.clone()));
     let api = Router::new()
         .merge(registration::routes())

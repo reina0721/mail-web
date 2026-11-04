@@ -19,7 +19,11 @@ backup() {
   mkdir -m 700 "$destination"
   chown 10001:10001 "$destination"
   # VACUUM INTO includes committed WAL transactions in one consistent snapshot.
-  compose exec -T mail-web /app/mail-web --backup "/app/backups/$stamp/mail-web.sqlite"
+  if compose ps --status running --services | grep -qx mail-web; then
+    compose exec -T mail-web /app/mail-web --backup "/app/backups/$stamp/mail-web.sqlite"
+  else
+    compose run --rm --no-deps --pull never mail-web --backup "/app/backups/$stamp/mail-web.sqlite"
+  fi
   cp .env compose.yaml "$destination/"
   tar -czf "$destination/config-secrets.tar.gz" config secrets
   (cd "$destination"; sha256sum mail-web.sqlite .env compose.yaml config-secrets.tar.gz > SHA256SUMS)
@@ -70,8 +74,10 @@ case "${1:-status}" in
     check
     fetch "${2:-latest}"
     if test -f .env; then
-      test -f compose.yaml && backup
-      compose stop
+      if test -f compose.yaml; then
+        compose stop
+        if test -s data/db/mail-web.sqlite; then backup; fi
+      fi
     else
       cp "$package/.env.example" .env
     fi
@@ -86,6 +92,9 @@ case "${1:-status}" in
     if grep -q '^PUBLIC_ORIGIN=https://mail-web.example.com$' .env; then
       echo 'Installed. Set PUBLIC_ORIGIN and service settings in .env, then run deploy/mail-web.sh start.'
     else start; fi
+    cp "$package/deploy/mail-web.sh" deploy/mail-web.sh.next
+    chmod 700 deploy/mail-web.sh.next
+    mv deploy/mail-web.sh.next deploy/mail-web.sh
     ;;
   start) start ;;
   stop) compose stop ;;
@@ -95,6 +104,8 @@ case "${1:-status}" in
     selected=$(realpath "${2:?backup directory required}")
     case "$selected" in "$root"/backups/*) ;; *) echo 'Backup must be inside this installation' >&2; exit 1;; esac
     (cd "$selected"; sha256sum -c SHA256SUMS)
+    tar -tzf "$selected/config-secrets.tar.gz" | awk '/^\// || /(^|\/)\.\.($|\/)/ {bad=1} END {exit bad}'
+    tar -tvzf "$selected/config-secrets.tar.gz" | awk 'substr($0,1,1)!="-" && substr($0,1,1)!="d" {bad=1} END {exit bad}'
     compose stop
     # Preserve the pre-restore database, including any WAL, instead of deleting it.
     saved="$root/backups/pre-restore-$(date -u +%Y%m%dT%H%M%SZ)-$$"
@@ -104,7 +115,7 @@ case "${1:-status}" in
     cp "$selected/.env" .env
     cp "$selected/compose.yaml" compose.yaml
     tar -xzf "$selected/config-secrets.tar.gz" -C "$root"
-    chown -R 10001:10001 data secrets
+    chown -R 10001:10001 data secrets logs backups
     # Restored sessions are revoked before service resumes.
     compose run --rm --no-deps --pull never mail-web --revoke-all-sessions
     start

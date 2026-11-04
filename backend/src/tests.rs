@@ -99,6 +99,36 @@ async fn session_isolation_csrf_revocation_and_operator_boundary() {
             .await
             .unwrap();
     assert!(revoked.is_none(), "Alice must not revoke Bob's session");
+    let before_poll = db::now() - 1000;
+    sqlx::query("UPDATE sessions SET last_seen=? WHERE id_hash=?")
+        .bind(before_poll)
+        .bind(hash("session-a"))
+        .execute(&app.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        routes
+            .clone()
+            .oneshot(request(
+                "GET",
+                "/auth/session",
+                "https://mail.example.com",
+                "csrf"
+            ))
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    let after_poll: i64 = sqlx::query_scalar("SELECT last_seen FROM sessions WHERE id_hash=?")
+        .bind(hash("session-a"))
+        .fetch_one(&app.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        before_poll, after_poll,
+        "Passive session probes must not extend idle expiry"
+    );
     sqlx::query("UPDATE sessions SET last_seen=? WHERE id_hash=?")
         .bind(db::now() - 1800001)
         .bind(hash("session-a"))

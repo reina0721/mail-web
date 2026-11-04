@@ -5,6 +5,44 @@ use axum::{
     response::sse::{Event, KeepAlive, Sse},
 };
 use futures_util::StreamExt;
+pub async fn clean_staging(root: &std::path::Path) -> std::io::Result<()> {
+    tokio::fs::create_dir_all(root).await?;
+    let mut entries = tokio::fs::read_dir(root).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        if entry.file_type().await?.is_file()
+            && entry
+                .file_name()
+                .to_str()
+                .is_some_and(|name| Uuid::parse_str(name).is_ok())
+        {
+            tokio::fs::remove_file(entry.path()).await?;
+        }
+    }
+    Ok(())
+}
+#[cfg(test)]
+mod staging_tests {
+    use super::*;
+    #[tokio::test]
+    async fn restart_removes_only_abandoned_upload_files() {
+        let root = std::env::temp_dir().join(Uuid::new_v4().to_string());
+        tokio::fs::create_dir(&root).await.unwrap();
+        let upload = root.join(Uuid::new_v4().to_string());
+        let directory = root.join(Uuid::new_v4().to_string());
+        tokio::fs::write(&upload, b"interrupted upload")
+            .await
+            .unwrap();
+        tokio::fs::write(root.join("operator-note"), b"preserve")
+            .await
+            .unwrap();
+        tokio::fs::create_dir(&directory).await.unwrap();
+        clean_staging(&root).await.unwrap();
+        assert!(!upload.exists());
+        assert!(root.join("operator-note").exists());
+        assert!(directory.is_dir());
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+}
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
         .route("/mailboxes", post(create_mailbox))
@@ -622,7 +660,7 @@ pub(super) async fn events(State(app): State<Arc<App>>, headers: HeaderMap) -> R
         if let Ok(client)=client && let Ok(response)=client.get(url).bearer_auth(&me.key).send().await && response.status().is_success(){let mut chunks=response.bytes_stream();loop{
             let chunk=tokio::time::timeout(std::time::Duration::from_secs(45),chunks.next()).await;
             let active:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM sessions s JOIN platform_users u ON u.id=s.user_id WHERE s.id_hash=? AND s.revoked_at IS NULL AND s.expires_at>? AND s.last_seen>? AND u.status='active')").bind(&me.session).bind(db::now()).bind(db::now()-1800000).fetch_one(&app.db).await.unwrap_or(false);
-            if !active{break;}
+            if !active{yield Ok(Event::default().event("session-expired").data("{}"));break;}
             match chunk{Ok(Some(Ok(_)))=>yield Ok(Event::default().event("sync").data("{}")),_=>break}
         }}
     };

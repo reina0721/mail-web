@@ -16,6 +16,7 @@ commit=$(git rev-parse HEAD)
 jq -n --arg version "$version" --arg commit "$commit" --arg image "$image" --arg id "$image_id" --argjson runtime "$runtime" '{version:$version,sourceCommit:$commit,architecture:"linux/amd64",image:$image,imageId:$id,sqliteVersion:$runtime.sqlite,database:{engine:"sqlite",migrationVersion:6,rollback:"restore-matching-backup"}}' > "$destination/package/release-manifest.json"
 cp compose.yaml .env.example README.md "$destination/package/"
 cp -R deploy "$destination/package/"
+cp -R docs "$destination/package/"
 cp -R backend/contract "$destination/package/"
 (cd "$destination/package"; sha256sum image.tar > image.sha256)
 tar -czf "$destination/mail-web-linux-amd64.tar.gz" -C "$destination/package" .

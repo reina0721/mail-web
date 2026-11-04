@@ -83,3 +83,13 @@ jobs:
           directory="build/release/$VERSION"
           case "$VERSION" in *-*) prerelease=--prerelease;; *) prerelease=;; esac
           gh release create "$VERSION" "$directory/mail-web-linux-amd64.tar.gz" "$directory/SHA256SUMS" "$directory/release-manifest.json" --target "$GITHUB_SHA" --title "Mail Web $VERSION" --notes-file docs/release-notes.md $prerelease
+      - name: Verify published direct-download installation and restore
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          docker pull python:3.13-slim-bookworm
+          if ! sudo MAIL_WEB_TEST_PYTHON_IMAGE=python:3.13-slim-bookworm sh tests/release-install.sh "$VERSION"; then
+            gh release edit "$VERSION" --draft
+            exit 1
+          fi

@@ -1,2 +1,2 @@
-import {Workspace} from '../../features/workspace';
-export default function Page(){return <Workspace surface="admin"/>;}
+import {OperationsSurface} from '../../surfaces/operations';
+export default function Page(){return <OperationsSurface/>;}
