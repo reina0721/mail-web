@@ -626,6 +626,12 @@ export interface components {
             id: string;
             operator: boolean;
         };
+        UploadView: {
+            blobId: string;
+            name: string;
+            size: number;
+            type: string;
+        };
         UserInput: {
             /** Format: int64 */
             daily_recipients: number;
@@ -1078,16 +1084,8 @@ export interface operations {
             };
         };
         responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
-                };
-            };
-            /** @description Completed */
-            204: {
+            /** @description Policy queued for durable synchronization */
+            202: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1123,15 +1121,8 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["UploadView"];
                 };
-            };
-            /** @description Completed */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
             };
             /** @description Session required */
             401: {

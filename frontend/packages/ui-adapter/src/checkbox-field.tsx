@@ -8,6 +8,7 @@ type CheckboxChangeProps =
 
 export type CheckboxFieldProps = Readonly<{
   label: string;
+  labelVisibility?: 'visible' | 'screen-reader';
   description?: string;
   checked: boolean;
 }> &
@@ -15,6 +16,7 @@ export type CheckboxFieldProps = Readonly<{
 
 export function CheckboxField({
   label,
+  labelVisibility = 'visible',
   description,
   checked,
   disabled = false,
@@ -34,7 +36,7 @@ export function CheckboxField({
         <Checkbox.Control className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-control border border-border-strong bg-surface text-on-brand">
           <Checkbox.Indicator className="pointer-events-none">✓</Checkbox.Indicator>
         </Checkbox.Control>
-        <span className="flex min-w-0 flex-col items-start">
+        <span className={labelVisibility === 'screen-reader' ? 'sr-only' : 'flex min-w-0 flex-col items-start'}>
           <span className="block font-semibold text-ink">{label}</span>
           {description ? (
             <span id={descriptionId} className="mt-1 block text-xs leading-5 text-ink-muted">

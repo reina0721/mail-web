@@ -38,6 +38,7 @@ impl Services {
     pub fn ready(&self) -> bool {
         !self.provisioning_key.is_empty()
             && !self.notification_key.is_empty()
+            && !self.notification_account.is_empty()
             && !self.domain_id.is_empty()
             && !self.turnstile_secret.is_empty()
             && !self.turnstile_site_key.is_empty()
@@ -45,4 +46,41 @@ impl Services {
             && !self.hook_id.is_empty()
             && self.policy_verified
     }
+}
+pub fn origin() -> Result<String, Box<dyn std::error::Error>> {
+    let value = std::env::var("PUBLIC_ORIGIN")?;
+    let url = reqwest::Url::parse(&value)?;
+    let loopback = matches!(
+        url.host_str(),
+        Some("localhost" | "127.0.0.1" | "[::1]" | "::1")
+    );
+    if !(url.scheme() == "https" || (loopback && url.scheme() == "http"))
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.path() != "/"
+    {
+        return Err(
+            "PUBLIC_ORIGIN must be an HTTPS origin (HTTP is allowed only for loopback development)"
+                .into(),
+        );
+    }
+    Ok(url.origin().ascii_serialization())
+}
+pub fn upstream(origin: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let value = std::env::var("STALWART_URL")?;
+    let url = reqwest::Url::parse(&value)?;
+    let isolated = origin.starts_with("http://")
+        && std::env::var("ALLOW_INSECURE_TEST_UPSTREAM").as_deref() == Ok("true");
+    if !(url.scheme() == "https" || (isolated && url.scheme() == "http"))
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || url.path() != "/"
+    {
+        return Err("STALWART_URL must be an HTTPS base origin; insecure upstream is restricted to explicit loopback tests".into());
+    }
+    Ok(url.origin().ascii_serialization())
 }

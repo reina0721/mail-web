@@ -25,28 +25,61 @@ jobs:
       - run: for script in deploy/*.sh tooling/*.sh tests/*.sh; do sh -n "$script"; done
       - run: docker build --platform linux/amd64 -t mail-web:ci .
       - run: docker run --rm --pull never mail-web:ci --runtime-info
+      - name: Real Stalwart and application integration
+        run: |
+          docker pull stalwartlabs/stalwart:v1.0.1-alpine
+          docker pull rust:1
+          sudo MAIL_WEB_TEST_IMAGE=mail-web:ci sh tests/run-integration.sh
+      - if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release-preview]'))
+        run: docker save mail-web:ci -o /tmp/mail-web-image.tar
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release-preview]'))
+        with:
+          name: application-image
+          path: /tmp/mail-web-image.tar
+          compression-level: 0
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release-preview]'))
     needs: checks
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - id: version
+        name: Resolve immutable release version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            version="$GITHUB_REF_NAME"
+          else
+            version="$(cat release-version.txt)"
+            case "$version" in v*-*) ;; *) echo 'Branch releases must be prereleases'; exit 1;; esac
+          fi
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Enforce stable acceptance gate
         env:
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           case "$VERSION" in
             *-*) echo 'Prerelease: production registration remains closed' ;;
             *) jq -e '.readyForPublicRegistration == true' docs/acceptance.json ;;
           esac
-      - run: docker build --platform linux/amd64 -t "mail-web:${GITHUB_REF_NAME#v}" .
-      - run: sh tooling/package-release.sh "$GITHUB_REF_NAME"
+      - uses: actions/download-artifact@v4
+        with:
+          name: application-image
+          path: /tmp/image
+      - env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: docker load -i /tmp/image/mail-web-image.tar && docker tag mail-web:ci "mail-web:${VERSION#v}"
+      - env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: sh tooling/package-release.sh "$VERSION"
       - name: Publish direct-download assets
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          directory="build/release/$GITHUB_REF_NAME"
-          case "$GITHUB_REF_NAME" in *-*) prerelease=--prerelease;; *) prerelease=;; esac
-          gh release create "$GITHUB_REF_NAME" "$directory/mail-web-linux-amd64.tar.gz" "$directory/SHA256SUMS" "$directory/release-manifest.json" --title "Mail Web $GITHUB_REF_NAME" --notes-file docs/release-notes.md $prerelease
+          directory="build/release/$VERSION"
+          case "$VERSION" in *-*) prerelease=--prerelease;; *) prerelease=;; esac
+          gh release create "$VERSION" "$directory/mail-web-linux-amd64.tar.gz" "$directory/SHA256SUMS" "$directory/release-manifest.json" --target "$GITHUB_SHA" --title "Mail Web $VERSION" --notes-file docs/release-notes.md $prerelease

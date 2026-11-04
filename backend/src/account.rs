@@ -1,4 +1,5 @@
 use super::*;
+pub(super) static JOB_NOTIFY: tokio::sync::Notify = tokio::sync::Notify::const_new();
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
         .route("/account", get(profile).patch(update_profile))
@@ -62,7 +63,7 @@ pub(super) async fn profile(
         .call(
             &app.services.provisioning_key,
             "x:Account/get",
-            json!({"ids":[me.account],"properties":["id","diskQuota","usedDiskQuota"]}),
+            json!({"ids":[me.account],"properties":["id","quotas","usedDiskQuota"]}),
         )
         .await?;
     Ok(Json(
@@ -111,6 +112,7 @@ pub(super) async fn password(
     if !(12..=128).contains(&input.new_password.chars().count()) {
         return Err(Error(StatusCode::BAD_REQUEST, "password_invalid"));
     }
+    let _account_guard = account_lock(&me.account).await;
     app.upstream
         .password_call(&me.email, &input.current_password, "Core/echo", json!({}))
         .await?;
@@ -145,6 +147,7 @@ pub(super) async fn revoke_session(
         .await?;
     sqlx::query("INSERT OR IGNORE INTO credential_revocations(session_hash) SELECT id_hash FROM sessions WHERE id_hash=? AND user_id=?").bind(id).bind(me.user).execute(&mut *tx).await?;
     tx.commit().await?;
+    JOB_NOTIFY.notify_one();
     Ok(StatusCode::NO_CONTENT)
 }
 #[utoipa::path(post,path="/api/v1/auth/sessions/revoke-others",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
@@ -162,6 +165,7 @@ pub(super) async fn revoke_others(
         .await?;
     sqlx::query("INSERT OR IGNORE INTO credential_revocations(session_hash) SELECT id_hash FROM sessions WHERE user_id=? AND id_hash<>? AND revoked_at IS NOT NULL").bind(me.user).bind(me.session).execute(&mut *tx).await?;
     tx.commit().await?;
+    JOB_NOTIFY.notify_one();
     Ok(StatusCode::NO_CONTENT)
 }
 #[utoipa::path(get,path="/api/v1/account/app-passwords",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
@@ -191,6 +195,7 @@ pub(super) async fn create_app_password(
     Json(input): Json<CredentialInput>,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, true).await?;
+    let _account_guard = account_lock(&me.account).await;
     if input.description.is_empty() || input.description.len() > 100 {
         return Err(Error(StatusCode::BAD_REQUEST, "description_invalid"));
     }
@@ -203,6 +208,7 @@ pub(super) async fn delete_app_password(
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
     let me = identity(&app, &headers, true).await?;
+    let _account_guard = account_lock(&me.account).await;
     app.upstream
         .call(&me.key, "x:AppPassword/set", json!({"destroy":[id]}))
         .await?;
@@ -223,7 +229,7 @@ pub(super) struct UserInput {
     hourly_recipients: i64,
     daily_recipients: i64,
 }
-#[utoipa::path(patch,path="/api/v1/admin/users/{id}",params(("id"=String,Path)),request_body=UserInput,responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
+#[utoipa::path(patch,path="/api/v1/admin/users/{id}",params(("id"=String,Path)),request_body=UserInput,responses((status=202,description="Policy queued for durable synchronization"),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn update_user(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
@@ -247,25 +253,87 @@ pub(super) async fn update_user(
     .fetch_optional(&app.db)
     .await?
     .ok_or(Error(StatusCode::NOT_FOUND, "user_not_found"))?;
+    let payload=json!({"account":row.get::<String,_>("stalwart_id"),"enabled":input.enabled,"quota":input.quota_bytes}).to_string();
+    let mut tx = app.db.begin_with("BEGIN IMMEDIATE").await?;
+    sqlx::query("UPDATE platform_users SET status=CASE WHEN ? THEN status ELSE 'disabled' END,quota_bytes=?,hourly_recipients=?,daily_recipients=? WHERE id=?").bind(input.enabled).bind(input.quota_bytes).bind(input.hourly_recipients).bind(input.daily_recipients).bind(id).execute(&mut *tx).await?;
+    sqlx::query("INSERT INTO credential_jobs(id,kind,user_id,payload) VALUES (?,'account-policy',?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,attempts=0,lease_until=0,next_attempt=0").bind(format!("account:{id}")).bind(id).bind(payload).execute(&mut *tx).await?;
+    tx.commit().await?;
     if !input.enabled {
         revoke_user(&app, id).await?;
-        sqlx::query("UPDATE platform_users SET status='disabled' WHERE id=?")
-            .bind(id)
-            .execute(&app.db)
-            .await?;
+    }
+    JOB_NOTIFY.notify_one();
+    audit_event(&app, me.user, "account.update", id, "queued").await?;
+    Ok(StatusCode::ACCEPTED)
+}
+
+pub(super) async fn reconcile_job(app: &App) -> Result<bool> {
+    let lease = db::now() + 60000;
+    let row=sqlx::query("UPDATE credential_jobs SET lease_until=? WHERE id=(SELECT id FROM credential_jobs WHERE kind='account-policy' AND lease_until<=? AND next_attempt<=? ORDER BY next_attempt LIMIT 1) RETURNING id,user_id,payload").bind(lease).bind(db::now()).bind(db::now()).fetch_optional(&app.db).await?;
+    let Some(row) = row else { return Ok(false) };
+    let id: String = row.get("id");
+    let user: Uuid = row.get("user_id");
+    let payload: String = row.get("payload");
+    let data: Value = serde_json::from_str(&payload).map_err(|_| internal("job_payload"))?;
+    let _account_guard =
+        account_lock(data["account"].as_str().ok_or(internal("job_account"))?).await;
+    let enabled = data["enabled"] == true;
+    let mut revocation_ready = true;
+    if enabled {
+        let sessions=sqlx::query("SELECT s.id_hash,s.upstream_key,s.upstream_key_id FROM sessions s JOIN credential_revocations r ON r.session_hash=s.id_hash WHERE s.user_id=?").bind(user).fetch_all(&app.db).await?;
+        for session in sessions {
+            let sid: String = session.get("id_hash");
+            if super::revoke_upstream(
+                app,
+                &sid,
+                data["account"].as_str().ok_or(internal("job_account"))?,
+                &session.get::<Vec<u8>, _>("upstream_key"),
+                &session.get::<String, _>("upstream_key_id"),
+            )
+            .await
+            {
+                sqlx::query("DELETE FROM credential_revocations WHERE session_hash=?")
+                    .bind(sid)
+                    .execute(&app.db)
+                    .await?;
+            } else {
+                revocation_ready = false;
+                break;
+            }
+        }
     }
     let mut update = json!({});
-    update[row.get::<String, _>("stalwart_id")] = json!({"diskQuota":input.quota_bytes,"permissions":if input.enabled{json!({"@type":"Inherit"})}else{json!({"@type":"Merge","disabledPermissions":{"authenticate":true,"emailSend":true}})}});
-    app.upstream
-        .call(
-            &app.services.provisioning_key,
-            "x:Account/set",
-            json!({"update":update}),
-        )
-        .await?;
-    sqlx::query("UPDATE platform_users SET status=?,quota_bytes=?,hourly_recipients=?,daily_recipients=? WHERE id=?").bind(if input.enabled{"active"}else{"disabled"}).bind(input.quota_bytes).bind(input.hourly_recipients).bind(input.daily_recipients).bind(id).execute(&app.db).await?;
-    audit_event(&app, me.user, "account.update", id, "success").await?;
-    Ok(StatusCode::NO_CONTENT)
+    update[data["account"].as_str().ok_or(internal("job_account"))?] = json!({"quotas/maxDiskQuota":data["quota"],"permissions":if enabled{json!({"@type":"Inherit"})}else{json!({"@type":"Merge","disabledPermissions":{"authenticate":true,"emailSend":true}})}});
+    let result = if revocation_ready {
+        app.upstream
+            .call(
+                &app.services.provisioning_key,
+                "x:Account/set",
+                json!({"update":update}),
+            )
+            .await
+    } else {
+        Err(stalwart::UpstreamError::Rejected)
+    };
+    if result.is_ok() {
+        let mut tx = app.db.begin_with("BEGIN IMMEDIATE").await?;
+        let current:bool=sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM credential_jobs WHERE id=? AND lease_until=? AND payload=?)").bind(&id).bind(lease).bind(&payload).fetch_one(&mut *tx).await?;
+        if current {
+            sqlx::query("UPDATE platform_users SET status=? WHERE id=?")
+                .bind(if enabled { "active" } else { "disabled" })
+                .bind(user)
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("DELETE FROM credential_jobs WHERE id=? AND lease_until=?")
+                .bind(&id)
+                .bind(lease)
+                .execute(&mut *tx)
+                .await?;
+        }
+        tx.commit().await?;
+    } else {
+        sqlx::query("UPDATE credential_jobs SET attempts=attempts+1,lease_until=0,next_attempt=? WHERE id=? AND lease_until=?").bind(db::now()+60000).bind(&id).bind(lease).execute(&app.db).await?;
+    }
+    Ok(true)
 }
 #[utoipa::path(get,path="/api/v1/admin/registration",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn get_settings(
@@ -287,6 +355,9 @@ pub(super) async fn put_settings(
     if !input["enabled"].is_boolean()
         || !(1..=100).contains(&input["maximumAccounts"].as_i64().unwrap_or(0))
         || input["quotaBytes"].as_i64().unwrap_or(0) <= 0
+        || !(1..=20971520).contains(&input["attachmentBytes"].as_i64().unwrap_or(0))
+        || !(1..=10000).contains(&input["hourlyRecipients"].as_i64().unwrap_or(0))
+        || !(1..=100000).contains(&input["dailyRecipients"].as_i64().unwrap_or(0))
     {
         return Err(Error(StatusCode::BAD_REQUEST, "policy_invalid"));
     }
@@ -321,12 +392,15 @@ pub(super) async fn tasks(State(app): State<Arc<App>>, headers: HeaderMap) -> Re
     let pending: i64 = sqlx::query_scalar("SELECT count(*) FROM credential_revocations")
         .fetch_one(&app.db)
         .await?;
+    let policy_jobs: i64 = sqlx::query_scalar("SELECT count(*) FROM credential_jobs")
+        .fetch_one(&app.db)
+        .await?;
     let reconciliation: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM platform_users WHERE status IN ('provisioning','reconcile')",
     )
     .fetch_one(&app.db)
     .await?;
     Ok(Json(
-        json!({"credentialRevocations":pending,"registrationReconciliation":reconciliation}),
+        json!({"accountPolicyJobs":policy_jobs,"credentialRevocations":pending,"registrationReconciliation":reconciliation}),
     ))
 }

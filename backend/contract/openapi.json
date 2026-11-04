@@ -338,16 +338,8 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "204": {
-            "description": "Completed"
+          "202": {
+            "description": "Policy queued for durable synchronization"
           },
           "401": {
             "description": "Session required"
@@ -369,12 +361,11 @@
             "description": "",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/UploadView"
+                }
               }
             }
-          },
-          "204": {
-            "description": "Completed"
           },
           "401": {
             "description": "Session required"
@@ -1578,6 +1569,30 @@
           },
           "operator": {
             "type": "boolean"
+          }
+        }
+      },
+      "UploadView": {
+        "type": "object",
+        "required": [
+          "blobId",
+          "name",
+          "type",
+          "size"
+        ],
+        "properties": {
+          "blobId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "type": {
+            "type": "string"
           }
         }
       },

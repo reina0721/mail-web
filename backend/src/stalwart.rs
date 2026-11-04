@@ -93,6 +93,11 @@ impl Stalwart {
             .and_then(|v| v.first())
             .ok_or(UpstreamError::Protocol)?;
         if call[0] != method {
+            tracing::warn!(
+                method,
+                error_type = call[1]["type"].as_str().unwrap_or("unknown"),
+                "upstream_method_rejected"
+            );
             return Err(UpstreamError::Rejected);
         }
         let result = call[1].clone();
@@ -102,6 +107,16 @@ impl Stalwart {
                 .and_then(Value::as_object)
                 .is_some_and(|v| !v.is_empty())
             {
+                if let Some(error) = result[field]
+                    .as_object()
+                    .and_then(|errors| errors.values().next())
+                {
+                    tracing::warn!(
+                        method,
+                        error_type = error["type"].as_str().unwrap_or("unknown"),
+                        "upstream_object_rejected"
+                    );
+                }
                 return Err(UpstreamError::Rejected);
             }
         }

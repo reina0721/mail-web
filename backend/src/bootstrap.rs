@@ -17,12 +17,15 @@ pub async fn operator(
     {
         return Err("invalid operator or external recovery email".into());
     }
-    if sqlx::query_scalar::<_, i64>("SELECT count(*) FROM platform_users WHERE email=?")
+    if let Some(existing) = sqlx::query("SELECT operator,status FROM platform_users WHERE email=?")
         .bind(email)
-        .fetch_one(&app.db)
+        .fetch_optional(&app.db)
         .await?
-        > 0
     {
+        if existing.get::<bool, _>("operator") && existing.get::<String, _>("status") == "active" {
+            println!("Independent platform operator already initialized: {email}");
+            return Ok(());
+        }
         return Err("operator address already mapped; no changes made".into());
     }
     let password = zeroize::Zeroizing::new(std::fs::read_to_string(password_file)?);
@@ -34,7 +37,7 @@ pub async fn operator(
     // Reserve locally before creating upstream. Ambiguous failures retain this
     // record for reconciliation; this command never adopts an existing account.
     sqlx::query("INSERT INTO platform_users(id,email,recovery_email,status,operator) VALUES (?,?,?,'provisioning',1)").bind(id).bind(email).bind(recovery).execute(&app.db).await?;
-    let created=app.upstream.call(&app.services.provisioning_key,"x:Account/set",json!({"create":{"operator":{"@type":"User","name":name,"domainId":app.services.domain_id,"description":marker,"roles":{"@type":"User"},"credentials":{"0":{"@type":"Password","secret":password.trim()}},"permissions":{"@type":"Merge","disabledPermissions":{"authenticate":true,"emailSend":true}},"diskQuota":1073741824}}})).await?;
+    let created=app.upstream.call(&app.services.provisioning_key,"x:Account/set",json!({"create":{"operator":{"@type":"User","name":name,"domainId":app.services.domain_id,"description":marker,"roles":{"@type":"User"},"credentials":{"0":{"@type":"Password","secret":password.trim()}},"permissions":{"@type":"Merge","disabledPermissions":{"authenticate":true,"emailSend":true}},"quotas":{"maxDiskQuota":1073741824,"maxApiKeys":64}}}})).await?;
     let account = created["created"]["operator"]["id"]
         .as_str()
         .ok_or("operator creation result unknown")?;

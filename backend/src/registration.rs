@@ -274,7 +274,7 @@ pub(super) async fn register(
             return Err(Error(StatusCode::FORBIDDEN, "registration_full"));
         }
         let id = Uuid::new_v4();
-        sqlx::query("INSERT INTO platform_users(id,email,recovery_email,status,challenge_id) VALUES (?,?,?,'provisioning',?)").bind(id).bind(&email).bind(challenge.get::<String,_>("email")).bind(input.challenge_id).execute(&mut *tx).await.map_err(|_|Error(StatusCode::CONFLICT,"address_unavailable"))?;
+        sqlx::query("INSERT INTO platform_users(id,email,recovery_email,status,challenge_id,hourly_recipients,daily_recipients,quota_bytes) VALUES (?,?,?,'provisioning',?,?,?,?)").bind(id).bind(&email).bind(challenge.get::<String,_>("email")).bind(input.challenge_id).bind(p["hourlyRecipients"].as_i64().unwrap_or(10)).bind(p["dailyRecipients"].as_i64().unwrap_or(50)).bind(p["quotaBytes"].as_i64().unwrap_or(1073741824)).execute(&mut *tx).await.map_err(|_|Error(StatusCode::CONFLICT,"address_unavailable"))?;
         id
     };
     let leased=sqlx::query("UPDATE platform_users SET provisioning_lease=?,challenge_id=? WHERE id=? AND provisioning_lease<=?").bind(db::now()+180000).bind(input.challenge_id).bind(user).bind(db::now()).execute(&mut *tx).await?;
@@ -312,13 +312,18 @@ pub(super) async fn register(
             .and_then(|items| items.iter().find(|a| a["emailAddress"] == email))
         {
             if record["description"] != marker {
+                // A confirmed foreign mailbox was never created by this operation.
+                // Release only our empty reservation so the verified user can
+                // choose another address. Never mutate the foreign account.
+                sqlx::query("DELETE FROM platform_users WHERE id=? AND status='provisioning' AND stalwart_id IS NULL")
+                    .bind(user).execute(&app.db).await?;
                 return Err(Error(StatusCode::CONFLICT, "upstream_address_exists"));
             }
             upstream_id = record["id"].as_str().map(str::to_owned);
         }
     }
     if upstream_id.is_none() {
-        let created=app.upstream.call(&app.services.provisioning_key,"x:Account/set",json!({"create":{"user":{"@type":"User","name":input.name,"domainId":app.services.domain_id,"description":marker,"permissions":{"@type":"Merge","disabledPermissions":{"authenticate":true,"emailSend":true}},"roles":{"@type":"User"},"credentials":{"0":{"@type":"Password","secret":input.password}},"diskQuota":p["quotaBytes"].as_i64().unwrap_or(1073741824)}}})).await?;
+        let created=app.upstream.call(&app.services.provisioning_key,"x:Account/set",json!({"create":{"user":{"@type":"User","name":input.name,"domainId":app.services.domain_id,"description":marker,"permissions":{"@type":"Merge","disabledPermissions":{"authenticate":true,"emailSend":true}},"roles":{"@type":"User"},"credentials":{"0":{"@type":"Password","secret":input.password}},"quotas":{"maxDiskQuota":p["quotaBytes"].as_i64().unwrap_or(1073741824),"maxApiKeys":64}}}})).await?;
         upstream_id = created["created"]["user"]["id"].as_str().map(str::to_owned);
     }
     let upstream_id = upstream_id.ok_or(Error(
@@ -380,6 +385,7 @@ pub(super) async fn recover(
     {
         let user_id: Uuid = user.get("id");
         let upstream: String = user.get("stalwart_id");
+        let _account_guard = account_lock(&upstream).await;
         // Revoke platform access before making an upstream password change.
         super::revoke_user(&app, user_id).await?;
         let mut update = json!({});

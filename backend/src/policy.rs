@@ -38,6 +38,13 @@ pub async fn sync_scope(app: &App) -> Result<()> {
             json!({"update":update}),
         )
         .await?;
+    app.upstream
+        .call(
+            &app.services.provisioning_key,
+            "x:Action/set",
+            json!({"create":{"reload":{"@type":"ReloadSettings"}}}),
+        )
+        .await?;
     Ok(())
 }
 
@@ -90,6 +97,9 @@ async fn reserve(app: &App, login: &str, event: &str, count: i64) -> Result<bool
     };
     if row.get::<String, _>("status") != "active" {
         return Ok(false);
+    }
+    if count == 0 {
+        return Ok(true);
     }
     let user: Uuid = row.get("id");
     if sqlx::query_scalar::<_, i64>(
@@ -156,9 +166,6 @@ pub async fn hook(
         .iter()
         .filter(|r| !r.ends_with("@iqwq.com"))
         .count() as i64;
-    if count == 0 {
-        return Ok(Json(json!({"action":"accept"})));
-    }
     if reserve(&app, &sasl.login, &event, count).await? {
         Ok(Json(json!({"action":"accept"})))
     } else {

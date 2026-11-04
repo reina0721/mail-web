@@ -203,7 +203,12 @@ async fn draft(app: &App, me: &Identity, input: &Draft) -> Result<String> {
         total += row.get::<i64, _>("size");
         attachments.push(json!({"blobId":a.blob_id,"name":a.name,"type":row.get::<String,_>("type"),"disposition":"attachment"}));
     }
-    if total > 20 * 1024 * 1024 {
+    let policy = registration::settings(app).await?;
+    let limit = policy["attachmentBytes"]
+        .as_i64()
+        .unwrap_or(20971520)
+        .min(20971520);
+    if total > limit {
         return Err(Error(
             StatusCode::PAYLOAD_TOO_LARGE,
             "attachments_too_large",
@@ -455,12 +460,21 @@ fn checked_url(app: &App, url: &str) -> Result<reqwest::Url> {
     }
     Ok(url)
 }
-#[utoipa::path(post,path="/api/v1/attachments",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
+#[derive(Serialize, ToSchema)]
+pub(super) struct UploadView {
+    #[serde(rename = "blobId")]
+    blob_id: String,
+    name: String,
+    #[serde(rename = "type")]
+    content_type: String,
+    size: usize,
+}
+#[utoipa::path(post,path="/api/v1/attachments",responses((status=200,body=UploadView),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn upload(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
     mut form: Multipart,
-) -> Result<Json<Value>> {
+) -> Result<Json<UploadView>> {
     let me = identity(&app, &headers, true).await?;
     let metadata = app.upstream.session(&me.key).await?;
     let target = metadata["uploadUrl"]
@@ -497,7 +511,7 @@ pub(super) async fn upload(
         .map_err(|_| internal("staging"))?;
     let mut size = 0usize;
     use tokio::io::AsyncWriteExt;
-    let result:Result<Value>=async{
+    let result:Result<UploadView>=async{
         while let Some(chunk)=field.chunk().await.map_err(|_|Error(StatusCode::BAD_REQUEST,"upload_interrupted"))?{size+=chunk.len();if size>20*1024*1024{return Err(Error(StatusCode::PAYLOAD_TOO_LARGE,"attachment_too_large"))}file.write_all(&chunk).await.map_err(|_|internal("staging"))?;}
         file.flush().await.map_err(|_|internal("staging"))?;drop(file);
         let read=tokio::fs::File::open(&path).await.map_err(|_|internal("staging"))?;
@@ -506,7 +520,7 @@ pub(super) async fn upload(
         let value:Value=response.json().await.map_err(|_|Error(StatusCode::BAD_GATEWAY,"upload_failed"))?;
         let blob=value["blobId"].as_str().ok_or(Error(StatusCode::BAD_GATEWAY,"upload_result_invalid"))?;
         sqlx::query("INSERT OR IGNORE INTO upload_ownership(user_id,blob_id,size,type,created_at) VALUES (?,?,?,?,?)").bind(me.user).bind(blob).bind(size as i64).bind(&kind).bind(db::now()).execute(&app.db).await?;
-        Ok(json!({"blob_id":blob,"name":name,"type":kind,"size":size}))
+        Ok(UploadView{blob_id:blob.to_string(),name,content_type:kind,size})
     }.await;
     let _ = tokio::fs::remove_file(path).await;
     Ok(Json(result?))

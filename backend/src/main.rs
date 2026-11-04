@@ -3,6 +3,7 @@ mod bootstrap;
 mod config;
 mod crypto;
 mod db;
+mod logging;
 mod mail;
 mod policy;
 mod registration;
@@ -24,7 +25,7 @@ use serde_json::{Value, json};
 use sqlx::{Row, SqlitePool};
 use stalwart::Stalwart;
 use std::{collections::HashMap, sync::Arc};
-use tower_http::{services::ServeDir, trace::TraceLayer};
+use tower_http::services::ServeDir;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -40,11 +41,7 @@ struct App {
 struct Error(StatusCode, &'static str);
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        (
-            self.0,
-            Json(json!({"code":self.1,"requestId":Uuid::new_v4()})),
-        )
-            .into_response()
+        (self.0, Json(json!({"code":self.1}))).into_response()
     }
 }
 impl From<sqlx::Error> for Error {
@@ -69,6 +66,17 @@ fn internal(_: &'static str) -> Error {
 }
 type Result<T> = std::result::Result<T, Error>;
 
+// Stalwart uses optimistic updates for the credential collection. Serialize
+// account mutations within this single-instance application, including jobs.
+async fn account_lock(account: &str) -> tokio::sync::MutexGuard<'static, ()> {
+    static LOCKS: std::sync::LazyLock<Vec<tokio::sync::Mutex<()>>> =
+        std::sync::LazyLock::new(|| (0..64).map(|_| tokio::sync::Mutex::new(())).collect());
+    let bucket = account.bytes().fold(0usize, |value, byte| {
+        value.wrapping_mul(31).wrapping_add(byte as usize)
+    }) % LOCKS.len();
+    LOCKS[bucket].lock().await
+}
+
 async fn revoke_user(app: &App, user: Uuid) -> Result<()> {
     let mut tx = app.db.begin().await?;
     sqlx::query("UPDATE sessions SET revoked_at=? WHERE user_id=?")
@@ -78,6 +86,7 @@ async fn revoke_user(app: &App, user: Uuid) -> Result<()> {
         .await?;
     sqlx::query("INSERT OR IGNORE INTO credential_revocations(session_hash) SELECT id_hash FROM sessions WHERE user_id=?").bind(user).execute(&mut *tx).await?;
     tx.commit().await?;
+    account::JOB_NOTIFY.notify_one();
     Ok(())
 }
 
@@ -203,6 +212,7 @@ async fn login(
     .await?
     .ok_or(Error(StatusCode::UNAUTHORIZED, "credentials_invalid"))?;
     let email: String = row.get("email");
+    let _account_guard = account_lock(&row.get::<String, _>("stalwart_id")).await;
     let expires = Utc::now() + Duration::hours(8);
     let id = token();
     let csrf = token();
@@ -214,10 +224,20 @@ async fn login(
         .as_str()
         .ok_or(Error(StatusCode::BAD_GATEWAY, "credential_not_returned"))?;
     let secret = app.vault.seal(key.as_bytes()).map_err(internal)?;
-    if let Err(e)=sqlx::query("INSERT INTO sessions(id_hash,user_id,csrf_hash,upstream_key,upstream_key_id,expires_at) VALUES ($1,$2,$3,$4,$5,$6)")
-        .bind(hash(&id)).bind(row.get::<Uuid,_>("id")).bind(hash(&csrf)).bind(secret).bind(keyid).bind(expires.timestamp_millis()).execute(&app.db).await {
-        let _=app.upstream.call(key,"x:ApiKey/set",json!({"destroy":[keyid]})).await;
-        return Err(e.into());
+    let stored=sqlx::query("INSERT INTO sessions(id_hash,user_id,csrf_hash,upstream_key,upstream_key_id,expires_at) SELECT $1,$2,$3,$4,$5,$6 WHERE EXISTS (SELECT 1 FROM platform_users WHERE id=$2 AND status='active')")
+        .bind(hash(&id)).bind(row.get::<Uuid,_>("id")).bind(hash(&csrf)).bind(secret).bind(keyid).bind(expires.timestamp_millis()).execute(&app.db).await;
+    if stored
+        .as_ref()
+        .map_or(true, |result| result.rows_affected() != 1)
+    {
+        let _ = app
+            .upstream
+            .call(key, "x:ApiKey/set", json!({"destroy":[keyid]}))
+            .await;
+        return Err(match stored {
+            Err(error) => error.into(),
+            _ => Error(StatusCode::UNAUTHORIZED, "credentials_invalid"),
+        });
     }
     let mut response = StatusCode::NO_CONTENT.into_response();
     response.headers_mut().append(
@@ -261,6 +281,7 @@ async fn logout(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Respo
     .execute(&mut *tx)
     .await?;
     tx.commit().await?;
+    account::JOB_NOTIFY.notify_one();
     let mut response = StatusCode::NO_CONTENT.into_response();
     for value in [
         "__Host-mail_session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0",
@@ -297,7 +318,9 @@ async fn messages(
         if search.len() > 512 {
             return Err(Error(StatusCode::BAD_REQUEST, "search_too_long"));
         }
-        filter["text"] = json!(search);
+        if !search.trim().is_empty() {
+            filter["text"] = json!(search.trim());
+        }
     }
     let position = query
         .get("position")
@@ -316,12 +339,41 @@ async fn message(
     Path(id): Path<String>,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, false).await?;
-    let result=app.upstream.call(&me.key,"Email/get",json!({"accountId":me.account,"ids":[id],"fetchTextBodyValues":true,"fetchHTMLBodyValues":true,"properties":["htmlBody","messageId","references","id","subject","from","to","cc","receivedAt","keywords","mailboxIds","textBody","bodyValues","attachments"]})).await?;
+    let result=app.upstream.call(&me.key,"Email/get",json!({"accountId":me.account,"ids":[id],"fetchTextBodyValues":true,"fetchHTMLBodyValues":true,"properties":["htmlBody","messageId","references","id","subject","from","to","cc","bcc","receivedAt","keywords","mailboxIds","textBody","bodyValues","attachments"]})).await?;
     let msg = result["list"]
         .as_array()
         .and_then(|list| list.first())
         .ok_or(Error(StatusCode::NOT_FOUND, "message_not_found"))?;
     let mut msg = msg.clone();
+    let plain = msg["textBody"]
+        .as_array()
+        .map(|parts| {
+            parts
+                .iter()
+                .filter_map(|p| {
+                    p["partId"]
+                        .as_str()
+                        .and_then(|id| msg["bodyValues"][id]["value"].as_str())
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+    msg["plainText"] = json!(plain);
+    if let Some(parts) = msg["attachments"].as_array() {
+        let mut tx = app.db.begin().await?;
+        for part in parts {
+            if let (Some(blob), Some(size), Some(kind)) = (
+                part["blobId"].as_str(),
+                part["size"].as_i64(),
+                part["type"].as_str(),
+            ) {
+                sqlx::query("INSERT INTO upload_ownership(user_id,blob_id,size,type,created_at) VALUES (?,?,?,?,?) ON CONFLICT(user_id,blob_id) DO UPDATE SET size=excluded.size,type=excluded.type").bind(me.user).bind(blob).bind(size).bind(kind).bind(db::now()).execute(&mut *tx).await?;
+            }
+        }
+        tx.commit().await?;
+    }
+
     let html = msg["htmlBody"]
         .as_array()
         .and_then(|parts| parts.first())
@@ -387,6 +439,32 @@ fn safe_html(input: &str) -> String {
         .clean(input)
         .to_string()
 }
+async fn response_policy(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let request_id = Uuid::new_v4().to_string();
+    let method = request.method().to_string();
+    let private = request.uri().path().starts_with("/api/");
+    let mut response = next.run(request).await;
+    tracing::info!(request_id=%request_id,method=%method,status=response.status().as_u16(),"request_complete");
+    let headers = response.headers_mut();
+    if private {
+        headers.insert("cache-control", HeaderValue::from_static("no-store"));
+    }
+    headers.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+    headers.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
+    if let Ok(value) = HeaderValue::from_str(&request_id) {
+        headers.insert("x-request-id", value);
+    }
+    if !headers.contains_key("content-security-policy") {
+        headers.insert("content-security-policy",HeaderValue::from_static("default-src 'self'; script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src 'self' https://challenges.cloudflare.com; connect-src 'self' https://challenges.cloudflare.com; frame-ancestors 'none'; object-src 'none'; base-uri 'none'; form-action 'self'"));
+    }
+    response
+}
 #[utoipa::path(get,path="/api/v1/health/ready",responses((status=200,body=Value),(status=204,description="Completed")))]
 async fn health(State(app): State<Arc<App>>) -> Result<Json<Value>> {
     sqlx::query("SELECT 1").execute(&app.db).await?;
@@ -441,19 +519,87 @@ async fn health(State(app): State<Arc<App>>) -> Result<Json<Value>> {
 )]
 struct ApiDoc;
 
+async fn revoke_upstream(app: &App, sid: &str, account: &str, cipher: &[u8], key_id: &str) -> bool {
+    if let Ok(key) = app
+        .vault
+        .open(cipher)
+        .and_then(|v| String::from_utf8(v).map_err(|_| "utf8"))
+        && app
+            .upstream
+            .call(&key, "x:ApiKey/set", json!({"destroy":[key_id]}))
+            .await
+            .is_ok()
+    {
+        return true;
+    }
+    // A 401 may mean account suspension rather than deletion of the key. Use
+    // the dedicated directory identity to remove the exact session credential.
+    let Ok(metadata) = app
+        .upstream
+        .call(
+            &app.services.provisioning_key,
+            "x:Account/get",
+            json!({"ids":[account],"properties":["id","credentials"]}),
+        )
+        .await
+    else {
+        return false;
+    };
+    let mut patch = json!({});
+    let description = format!("mail-web:{sid}");
+    if let Some(credentials) = metadata["list"][0]["credentials"].as_object() {
+        for (slot, credential) in credentials {
+            if credential["@type"] == "ApiKey" && credential["description"] == description {
+                patch[format!("credentials/{slot}")] = Value::Null;
+            }
+        }
+    }
+    if patch.as_object().is_none_or(|v| v.is_empty()) {
+        return true;
+    }
+    let mut update = json!({});
+    update[account] = patch;
+    app.upstream
+        .call(
+            &app.services.provisioning_key,
+            "x:Account/set",
+            json!({"update":update}),
+        )
+        .await
+        .is_ok()
+}
 async fn revocations(app: Arc<App>) {
     loop {
-        if let Ok(rows)=sqlx::query("SELECT r.session_hash,s.upstream_key,s.upstream_key_id FROM credential_revocations r JOIN sessions s ON s.id_hash=r.session_hash WHERE r.next_attempt<=(CAST(unixepoch('subsec')*1000 AS INTEGER)) LIMIT 20").fetch_all(&app.db).await {
-            for row in rows {
-                let sid:String=row.get("session_hash");
-                let key:Vec<u8>=row.get("upstream_key");
-                if let Ok(key)=app.vault.open(&key).and_then(|v|String::from_utf8(v).map_err(|_|"utf8")) {
-                    let result=app.upstream.call(&key,"x:ApiKey/set",json!({"destroy":[row.get::<String,_>("upstream_key_id")]})).await;
-                    if result.is_ok() || matches!(result,Err(stalwart::UpstreamError::Authentication)) {
-                        let _=sqlx::query("DELETE FROM credential_revocations WHERE session_hash=$1").bind(&sid).execute(&app.db).await;
-                    } else {
-                        let _=sqlx::query("UPDATE credential_revocations SET attempts=attempts+1,next_attempt=(CAST(unixepoch('subsec')*1000 AS INTEGER)+60000),last_error='upstream_unavailable' WHERE session_hash=$1").bind(&sid).execute(&app.db).await;
-                    }
+        for _ in 0..20 {
+            if !account::reconcile_job(&app).await.unwrap_or(false) {
+                break;
+            }
+        }
+        for _ in 0..20 {
+            let lease = db::now() + 60000;
+            let claimed=sqlx::query_scalar::<_,String>("UPDATE credential_revocations SET lease_until=? WHERE session_hash=(SELECT session_hash FROM credential_revocations WHERE next_attempt<=? AND lease_until<=? LIMIT 1) RETURNING session_hash").bind(lease).bind(db::now()).bind(db::now()).fetch_optional(&app.db).await;
+            let Ok(Some(sid)) = claimed else { break };
+            let row=sqlx::query("SELECT s.upstream_key,s.upstream_key_id,u.stalwart_id FROM sessions s JOIN platform_users u ON u.id=s.user_id WHERE s.id_hash=?").bind(&sid).fetch_optional(&app.db).await;
+            if let Ok(Some(row)) = row {
+                let _account_guard = account_lock(&row.get::<String, _>("stalwart_id")).await;
+                if revoke_upstream(
+                    &app,
+                    &sid,
+                    &row.get::<String, _>("stalwart_id"),
+                    &row.get::<Vec<u8>, _>("upstream_key"),
+                    &row.get::<String, _>("upstream_key_id"),
+                )
+                .await
+                {
+                    let _ = sqlx::query(
+                        "DELETE FROM credential_revocations WHERE session_hash=? AND lease_until=?",
+                    )
+                    .bind(&sid)
+                    .bind(lease)
+                    .execute(&app.db)
+                    .await;
+                } else {
+                    let _=sqlx::query("UPDATE credential_revocations SET attempts=attempts+1,lease_until=0,next_attempt=?,last_error='upstream_unavailable' WHERE session_hash=? AND lease_until=?").bind(db::now()+60000).bind(&sid).bind(lease).execute(&app.db).await;
                 }
             }
         }
@@ -462,7 +608,7 @@ async fn revocations(app: Arc<App>) {
             let _=sqlx::query("UPDATE sessions SET revoked_at=? WHERE revoked_at IS NULL AND (expires_at<=? OR last_seen<=?)").bind(db::now()).bind(db::now()).bind(db::now()-1800000).execute(&mut *tx).await;
             let _ = tx.commit().await;
         }
-        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        tokio::select! {_=tokio::time::sleep(std::time::Duration::from_secs(30))=>{},_=account::JOB_NOTIFY.notified()=>{}}
     }
 }
 
@@ -505,7 +651,12 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         println!("{}", ApiDoc::openapi().to_pretty_json()?);
         return Ok(());
     }
+    let (log_writer, _log_guard) = tracing_appender::non_blocking(logging::LogWriter::new(
+        std::path::PathBuf::from(std::env::var("LOG_DIR").unwrap_or_else(|_| "logs".into())),
+    )?);
     tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(log_writer)
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
     if let Some(i) = args.iter().position(|a| a == "--backup") {
@@ -521,19 +672,19 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     ))
     .await?;
 
+    let origin = config::origin()?;
+    let upstream_base = config::upstream(&origin)?;
     let app = Arc::new(App {
         db,
         vault,
         services: config::Services::load(),
-        origin: std::env::var("PUBLIC_ORIGIN")?,
+        origin,
         upstream: Stalwart {
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(15))
                 .redirect(reqwest::redirect::Policy::none())
                 .build()?,
-            base: std::env::var("STALWART_URL")?
-                .trim_end_matches('/')
-                .to_string(),
+            base: upstream_base,
         },
     });
     if let Some(i) = args.iter().position(|a| a == "--init-operator") {
@@ -568,7 +719,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             .append_index_html_on_directories(true),
         )
         .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024))
-        .layer(TraceLayer::new_for_http())
+        .layer(axum::middleware::from_fn(response_policy))
         .with_state(app);
     let listener = tokio::net::TcpListener::bind(
         std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into()),
@@ -578,6 +729,20 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         listener,
         routes.into_make_service_with_connect_info::<std::net::SocketAddr>(),
     )
+    .with_graceful_shutdown(async {
+        #[cfg(unix)]
+        {
+            if let Ok(mut terminate) =
+                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            {
+                tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {} }
+            } else {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        }
+        #[cfg(not(unix))]
+        let _ = tokio::signal::ctrl_c().await;
+    })
     .await?;
     Ok(())
 }
