@@ -8,6 +8,8 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+import http.server
+import threading
 
 PROJECT = Path(__file__).resolve().parents[1]
 ROOT = PROJECT / "tests/runtime/automatic-installation"
@@ -15,6 +17,43 @@ SOURCE = PROJECT / "tests/runtime/platform"
 NAME = "mail-web-auto-test"
 ORIGIN = "http://127.0.0.1:19193"
 IMAGE = os.environ.get("MAIL_WEB_TEST_IMAGE", "mail-web:ci")
+
+
+class LostKeyResponseProxy(http.server.BaseHTTPRequestHandler):
+    """Disposable upstream proxy: lose one response after real key creation."""
+    created = threading.Event()
+    release = threading.Event()
+
+    def log_message(self, *_):
+        pass  # Never log credentials or request bodies.
+
+    def do_GET(self):
+        self.forward()
+
+    def do_POST(self):
+        self.forward()
+
+    def forward(self):
+        data = self.rfile.read(int(self.headers.get("Content-Length", "0"))) if self.command == "POST" else None
+        headers = {name: self.headers[name] for name in ["Authorization", "Content-Type"] if name in self.headers}
+        upstream = urllib.request.Request("http://127.0.0.1:19080" + self.path, data=data, headers=headers, method=self.command)
+        try:
+            with urllib.request.urlopen(upstream, timeout=20) as response:
+                status, payload = response.status, response.read()
+        except urllib.error.HTTPError as error:
+            status, payload = error.code, error.read()
+        call = json.loads(data).get("methodCalls", [[]])[0] if data else []
+        if call and call[0] == "x:ApiKey/set" and "create" in call[1] and not self.created.is_set():
+            self.created.set()
+            self.release.wait(20)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
 def docker(*args):
     return subprocess.check_output(["docker", *args], text=True).strip()
@@ -66,7 +105,13 @@ def exercise(mode):
         (ROOT / directory).mkdir(parents=True, exist_ok=True)
     shutil.copy2(SOURCE / "secrets/session.key", ROOT / "secrets/session.key")
     subprocess.run(["docker", "rm", "-f", NAME], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    proxy = None
+    if mode == "existing":
+        proxy = http.server.ThreadingHTTPServer(("0.0.0.0", 19194), LostKeyResponseProxy)
+        proxy.daemon_threads = True
+        threading.Thread(target=proxy.serve_forever, daemon=True).start()
     docker("run", "-d", "--pull", "never", "--user", "0:0", "--name", NAME,
+           "--add-host", "host.docker.internal:host-gateway",
            "--network", "mail-web-test", "-p", "127.0.0.1:19193:8080", "-e", "BIND_ADDR=0.0.0.0:8080",
            "-e", "ALLOW_INSECURE_TEST_UPSTREAM=true", "-e", "ALLOW_HTTP=true",
            "-e", "SESSION_KEY_FILE=/runtime/secrets/session.key", "-e", "SETUP_TOKEN_FILE=/runtime/secrets/setup.key",
@@ -78,6 +123,8 @@ def exercise(mode):
         capability = (ROOT / "secrets/setup.key").read_text().strip()
         admin_password = (PROJECT / "tests/runtime/bootstrap.secret").read_text().strip()
         credentials = {"base": "http://mail-web-stalwart-test:8080", "username": "bootstrap", "password": admin_password}
+        if proxy:
+            credentials["base"] = "http://host.docker.internal:19194"
         admin_key = None
         if mode == "new":
             # Exercise administrator API-key authorization independently of Basic.
@@ -118,6 +165,21 @@ def exercise(mode):
         code, started = request(path + "job", "POST", body, capability)
         assert code == 200, started
         assert request(path + "job", "POST", body, capability)[0] == 409
+        if proxy:
+            assert LostKeyResponseProxy.created.wait(10), "Real API-key creation was not reached"
+            # Kill the application while the successful remote response is lost.
+            # The journal has the owned account and temporary generated password,
+            # but deliberately has no captured API-key Secret yet.
+            docker("restart", NAME)
+            LostKeyResponseProxy.release.set()
+            wait_ready()
+            code, recovered = request(path + "job", capability=capability)
+            assert code == 200 and recovered["job"]["status"] == "interrupted", recovered
+            assert request(path + "preflight", "POST", body, capability)[0] == 401
+            code, fresh = request(path + "authorize", "POST", credentials, capability)
+            assert code == 200
+            body["ticket"] = fresh["ticket"]
+            assert request(path + "job", "POST", body, capability)[0] == 200
         for _ in range(100):
             try:
                 code, current = request(path + "job", capability=capability)
@@ -161,6 +223,7 @@ def exercise(mode):
                 values = json.load(response)["methodResponses"][0][1]["list"]
             credential = next(k for k in values if k["id"] == job["resources"][kind + "Key"])
             assert credential["permissions"]["@type"] == "Replace"
+            assert len(values) == 1, "An unreachable orphan API key was not reconciled"
         # Same operation cannot create a second set of resources after completion.
         code, reauthorized = request(path + "authorize", "POST", credentials, capability, spec["publicOrigin"])
         assert code == 200
@@ -180,6 +243,9 @@ def exercise(mode):
             with urllib.request.urlopen(cleanup) as response:
                 response.read()
         subprocess.run(["docker", "stop", NAME], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        if proxy:
+            LostKeyResponseProxy.release.set()
+            proxy.shutdown()
 
 
 exercise("existing")
