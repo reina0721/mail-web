@@ -2,7 +2,7 @@
   "readyForPublicRegistration": false,
   "evidenceScope": {
     "historicalProductionRelease": "v0.1.0-alpha.3",
-    "candidateRelease": "v0.2.0-alpha.7",
+    "candidateRelease": "v0.2.0-alpha.8",
     "candidateStatus": "Registration readiness candidate: 26 local backend tests and type/build/boundary checks passed. Removes legacy attestation from gating and adds configuration-bound automatic/human checks. Final isolated release and production panel verification pending."
   },
   "verifiedInIsolatedStalwart101": [

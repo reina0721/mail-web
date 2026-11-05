@@ -31,6 +31,14 @@ http.createServer(async(req,res)=>{try{
   if(key==='/registration/policy')return json(res,policy);
   if(mode.expired)return json(res,{code:'unauthorized'},401);
   if(mode.fail&&key.startsWith(mode.fail))return json(res,{code:'unavailable'},503);
+  if(key==='/installation/readiness'){
+   if(mode.slow&&req.method==='POST')await new Promise(resolve=>setTimeout(resolve,1200));
+   const labels={configuration:'运行凭据和网站来源',directory:'目录服务与账号管理权限',domain:'已配置的邮箱域名',sender:'发件权限与真实发件身份',hook:'专用 Hook 配置与账号作用范围',callback:'网站回调认证（不代表协议实测）',turnstile:'Turnstile 配置（真实验证在下一步）'};
+   const items=Object.entries(labels).map(([id,label])=>({id,label,status:mode.readinessFailure===id?'failed':'passed',reason:mode.readinessFailure===id?'callback_unreachable':null}));
+   const ready=!mode.readinessFailure&&!!mode.readinessHuman;
+   return json(res,{ready,items,requestedEnabled:policy.enabled,effectiveEnabled:policy.enabled&&ready,checkedAt:Date.now(),humanVerifiedAt:mode.readinessHuman?Date.now():0,releaseVersion:'0.2.0-alpha.8',protocolScope:'示例预览：未执行生产停机或协议压力测试'});
+  }
+  if(key==='/installation/readiness/link')return json(res,{url:setup.publicOrigin+'/setup/check/#check=isolated-preview-only',expiresInSeconds:600});
   if(key==='/installation/initialize/authorize'){
    if(input.username==='denied')return json(res,{code:'initialization_permissions_missing'},403);
    if(mode.slow)await new Promise(resolve=>setTimeout(resolve,1200));
@@ -76,7 +84,7 @@ http.createServer(async(req,res)=>{try{
   if(key.startsWith('/admin/')&&!mode.operator)return json(res,{code:'forbidden'},403);
   if(key==='/admin/users')return json(res,{items:users});
   if(key.startsWith('/admin/users/')){Object.assign(users.find(u=>u.id===key.split('/').pop()),{quotaBytes:input.quota_bytes,hourlyRecipients:input.hourly_recipients,dailyRecipients:input.daily_recipients,status:input.enabled?'active':'disabled'});return json(res,{});}
-  if(key==='/admin/registration'){if(req.method==='PATCH')Object.assign(policy,input);return json(res,{policy,dependenciesReady:mode.ready});}
+  if(key==='/admin/registration'){if(req.method==='PATCH')Object.assign(policy,input);return json(res,{policy,dependenciesReady:!mode.readinessFailure&&!!mode.readinessHuman});}
   if(key==='/admin/tasks')return json(res,{accountPolicyJobs:0,credentialRevocations:0,registrationReconciliation:0});
   if(key==='/admin/tasks/retry')return json(res,{queued:0});
   if(key==='/admin/audit')return json(res,{items:audit});
