@@ -52,6 +52,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/account/capabilities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["capabilities"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/account/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/audit": {
         parameters: {
             query?: never;
@@ -420,6 +452,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/installation/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list"];
+        put?: never;
+        post: operations["save"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/installation/connections/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["prepare"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/installation/connections/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["details"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/installation/discover": {
         parameters: {
             query?: never;
@@ -708,6 +788,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/registration/domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["public_domains"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/registration/policy": {
         parameters: {
             query?: never;
@@ -788,6 +884,7 @@ export interface components {
             starred?: boolean | null;
         };
         ChallengeInput: {
+            domainId?: string | null;
             email: string;
             purpose: string;
             turnstile_token: string;
@@ -916,6 +1013,7 @@ export interface components {
             idempotency_key: string;
         };
         SessionView: {
+            domainId: string;
             email: string;
             /** Format: uuid */
             id: string;
@@ -1165,9 +1263,50 @@ export interface operations {
             };
         };
     };
-    audit: {
+    capabilities: {
         parameters: {
             query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    usage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    audit: {
+        parameters: {
+            query?: {
+                /** @description Stable local domain ID; omitted uses the migrated default domain */
+                domainId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1207,7 +1346,10 @@ export interface operations {
     };
     get_settings: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local domain ID; omitted uses the migrated default domain */
+                domainId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1247,7 +1389,10 @@ export interface operations {
     };
     put_settings: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local domain ID; omitted uses the migrated default domain */
+                domainId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1291,7 +1436,10 @@ export interface operations {
     };
     tasks: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local domain ID; omitted uses the migrated default domain */
+                domainId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1331,7 +1479,10 @@ export interface operations {
     };
     retry_tasks: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local domain ID; omitted uses the migrated default domain */
+                domainId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1364,7 +1515,10 @@ export interface operations {
     };
     users: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local domain ID; omitted uses the migrated default domain */
+                domainId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2084,9 +2238,98 @@ export interface operations {
             };
         };
     };
-    discover: {
+    list: {
         parameters: {
             query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    save: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    prepare: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": unknown;
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    details: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    discover: {
+        parameters: {
+            query?: {
+                /** @description Stable local connection ID; omitted uses the default connection */
+                serviceId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2123,7 +2366,10 @@ export interface operations {
     };
     authorize_temporary: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local connection ID; omitted uses the default connection */
+                serviceId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2146,7 +2392,10 @@ export interface operations {
     };
     cancel: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local connection ID; omitted uses the default connection */
+                serviceId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2165,7 +2414,10 @@ export interface operations {
     };
     progress: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local connection ID; omitted uses the default connection */
+                serviceId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2184,7 +2436,10 @@ export interface operations {
     };
     start: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local connection ID; omitted uses the default connection */
+                serviceId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2207,7 +2462,10 @@ export interface operations {
     };
     preflight: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local connection ID; omitted uses the default connection */
+                serviceId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2259,7 +2517,10 @@ export interface operations {
     };
     report: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local domain ID; omitted uses the migrated default domain */
+                domainId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2278,7 +2539,10 @@ export interface operations {
     };
     run: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local domain ID; omitted uses the migrated default domain */
+                domainId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2297,7 +2561,10 @@ export interface operations {
     };
     link: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local domain ID; omitted uses the migrated default domain */
+                domainId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2673,7 +2940,10 @@ export interface operations {
     };
     availability: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Stable local domain ID; omitted uses the migrated default domain */
+                domainId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2748,9 +3018,31 @@ export interface operations {
             };
         };
     };
-    public_policy: {
+    public_domains: {
         parameters: {
             query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    public_policy: {
+        parameters: {
+            query?: {
+                /** @description Stable local domain ID; omitted uses the migrated default domain */
+                domainId?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;

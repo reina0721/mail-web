@@ -47,7 +47,11 @@ impl Services {
             && !self.provisioning_key.is_empty()
             && !self.notification_key.is_empty()
             && !self.notification_account.is_empty()
-            && self.is_local_address(&self.notification_email)
+            && self
+                .notification_email
+                .rsplit_once('@')
+                .is_some_and(|(local, domain)| !local.is_empty() && !domain.is_empty())
+            && !self.notification_email.chars().any(char::is_whitespace)
             && !self.domain_id.is_empty()
             && !self.turnstile_secret.is_empty()
             && !self.turnstile_site_key.is_empty()

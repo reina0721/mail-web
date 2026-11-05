@@ -259,7 +259,7 @@ pub(super) async fn read_config(
         documentation_url: discovery::documentation_url(),
     }))
 }
-fn domain_valid(domain: &str) -> bool {
+pub(crate) fn domain_valid(domain: &str) -> bool {
     domain.len() <= 253
         && domain.contains('.')
         && domain.split('.').all(|label| {
@@ -579,6 +579,10 @@ mod tests {
             .join("../tests/runtime")
             .join(format!("installation-{}", Uuid::new_v4()));
         let app = Arc::new(App {
+            root: None,
+            revision: 0,
+            service_id: "default".into(),
+            domain_id: "default".into(),
             db: db::connect(&directory.join("mail.sqlite")).await.unwrap(),
             upstream: Stalwart {
                 http: reqwest::Client::new(),

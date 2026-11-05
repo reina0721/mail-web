@@ -194,13 +194,22 @@ fn schema_routes(schema: &Value, base: &str) -> Value {
     json!({"admin":format!("{base}/admin/"),"account":format!("{base}/account/"),"domains":find("x:Domain","/admin/"),"accounts":find("x:Account/User","/admin/"),"hooks":find("x:MtaHook","/admin/"),"keys":find("x:ApiKey","/account/")})
 }
 
-#[utoipa::path(post,path="/api/v1/installation/discover",tag="installation",request_body=DiscoveryInput,responses((status=200,body=Value),(status=401,description="Installation token or operator required"),(status=400,description="Invalid source or missing key")))]
+#[utoipa::path(post,path="/api/v1/installation/discover",params(("serviceId"=Option<String>,Query,description="Stable local connection ID; omitted uses the default connection")),tag="installation",request_body=DiscoveryInput,responses((status=200,body=Value),(status=401,description="Installation token or operator required"),(status=400,description="Invalid source or missing key")))]
 pub(crate) async fn discover(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
     Json(input): Json<DiscoveryInput>,
 ) -> Result<Json<Value>> {
     authorize(&app, &headers, true).await?;
+    let app = connections::for_service(
+        &app,
+        query
+            .get("serviceId")
+            .map(String::as_str)
+            .unwrap_or("default"),
+    )
+    .await?;
     let raw = input.stalwart_url.trim();
     let raw = if raw.contains("://") {
         raw.to_owned()

@@ -9,12 +9,38 @@ mod provision;
 use journal::{Job, Spec};
 
 static GRANTS: LazyLock<Mutex<HashMap<String, Grant>>> = LazyLock::new(Default::default);
-static RUNNING: LazyLock<Mutex<Option<tokio_util::sync::CancellationToken>>> =
+static RUNNING: LazyLock<Mutex<HashMap<String, tokio_util::sync::CancellationToken>>> =
     LazyLock::new(Default::default);
-static JOB_LOCK: Mutex<()> = Mutex::const_new(());
+async fn job_lock(app: &App) -> tokio::sync::OwnedMutexGuard<()> {
+    static LOCKS: LazyLock<std::sync::Mutex<HashMap<String, Arc<Mutex<()>>>>> =
+        LazyLock::new(Default::default);
+    let mutex = LOCKS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .entry(app.service_id.clone())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone();
+    mutex.lock_owned().await
+}
+async fn selected(
+    app: &App,
+    headers: &HeaderMap,
+    query: &HashMap<String, String>,
+    write: bool,
+) -> Result<Arc<App>> {
+    authorize(app, headers, write).await?;
+    connections::for_service(
+        app,
+        query
+            .get("serviceId")
+            .map(String::as_str)
+            .unwrap_or("default"),
+    )
+    .await
+}
 
 pub(crate) async fn active(app: &App) -> Result<bool> {
-    if RUNNING.lock().await.is_some() {
+    if RUNNING.lock().await.contains_key(&app.service_id) {
         return Ok(true);
     }
     Ok(journal::read(app)?.is_some_and(|job| job.status == "applying"))
@@ -122,12 +148,24 @@ pub(super) fn routes() -> Router<Arc<App>> {
 async fn owner(app: &App, headers: &HeaderMap, write: bool) -> Result<String> {
     authorize(app, headers, write).await?;
     if let Some(candidate) = headers.get("authorization").and_then(|h| h.to_str().ok()) {
-        Ok(hash(candidate))
+        Ok(if app.service_id == "default" {
+            hash(candidate)
+        } else {
+            format!("{}:{}", app.service_id, hash(candidate))
+        })
     } else {
-        Ok(identity(app, headers, false).await?.user.to_string())
+        Ok(if app.service_id == "default" {
+            identity(app, headers, false).await?.user.to_string()
+        } else {
+            format!(
+                "{}:{}",
+                app.service_id,
+                identity(app, headers, false).await?.user
+            )
+        })
     }
 }
-fn normalize_source(raw: &str) -> Result<String> {
+pub(crate) fn normalize_source(raw: &str) -> Result<String> {
     let raw = if raw.contains("://") {
         raw.to_owned()
     } else {
@@ -164,15 +202,20 @@ async fn grant(ticket: &str, owner: &str) -> Result<Grant> {
     value.expires = db::now() + 600_000;
     Ok(value.clone())
 }
-#[utoipa::path(post,tag="installation",path="/api/v1/installation/initialize/authorize",request_body=Value,responses((status=200,body=Value)))]
+#[utoipa::path(post,tag="installation",path="/api/v1/installation/initialize/authorize",params(("serviceId"=Option<String>,Query,description="Stable local connection ID; omitted uses the default connection")),request_body=Value,responses((status=200,body=Value)))]
 pub(crate) async fn authorize_temporary(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
     Json(mut input): Json<Grant>,
 ) -> Result<Json<Value>> {
+    let app = selected(&app, &headers, &query, true).await?;
     let who = owner(&app, &headers, true).await?;
     policy::rate(&app, &format!("initialize:{who}"), 20, 60_000).await?;
     input.base = normalize_source(&input.base)?;
+    if app.service_id != "default" && input.base != app.upstream.base {
+        return Err(Error(StatusCode::BAD_REQUEST, "new_server_key_required"));
+    }
     if input.api_key.is_empty() && (input.username.is_empty() || input.password.is_empty()) {
         return Err(Error(
             StatusCode::BAD_REQUEST,
@@ -246,12 +289,14 @@ fn normalize_spec(spec: &mut Spec) -> Result<()> {
         .map_err(|_| Error(StatusCode::BAD_REQUEST, "public_origin_invalid"))?;
     Ok(())
 }
-#[utoipa::path(post,tag="installation",path="/api/v1/installation/initialize/preflight",request_body=Value,responses((status=200,body=Value)))]
+#[utoipa::path(post,tag="installation",path="/api/v1/installation/initialize/preflight",params(("serviceId"=Option<String>,Query,description="Stable local connection ID; omitted uses the default connection")),request_body=Value,responses((status=200,body=Value)))]
 pub(crate) async fn preflight(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
     Json(mut input): Json<Request>,
 ) -> Result<Json<Value>> {
+    let app = selected(&app, &headers, &query, true).await?;
     normalize_spec(&mut input.spec)?;
     let who = owner(&app, &headers, true).await?;
     let mut access = grant(&input.ticket, &who).await?;
@@ -266,13 +311,15 @@ pub(crate) async fn preflight(
         json!({"resources":["邮箱域名（已有则复用）","本安装专用目录服务身份与 API 密钥","验证码发件邮箱与 API 密钥","本安装专用 MTA Hook 与共享密钥","运营邮箱及策略作用范围"],"turnstile":!input.spec.cloudflare_account.is_empty(),"changesDns":false,"opensRegistration":false}),
     ))
 }
-#[utoipa::path(get,tag="installation",path="/api/v1/installation/initialize/job",responses((status=200,body=Value)))]
+#[utoipa::path(get,tag="installation",path="/api/v1/installation/initialize/job",params(("serviceId"=Option<String>,Query,description="Stable local connection ID; omitted uses the default connection")),responses((status=200,body=Value)))]
 pub(crate) async fn progress(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>> {
+    let app = selected(&app, &headers, &query, false).await?;
     let who = owner(&app, &headers, false).await?;
-    let _guard = JOB_LOCK.lock().await;
+    let _guard = job_lock(&app).await;
     let Some(mut job) = journal::read(&app)? else {
         return Ok(Json(json!({"job":null})));
     };
@@ -282,19 +329,21 @@ pub(crate) async fn progress(
             "initialization_owner_required",
         ));
     }
-    if job.status == "running" && RUNNING.lock().await.is_none() {
+    if job.status == "running" && !RUNNING.lock().await.contains_key(&app.service_id) {
         job.status = "interrupted".into();
         job.error = "initialization_reauthorize_to_resume".into();
         journal::write(&app, &job)?;
     }
     Ok(Json(json!({"job":job.public()})))
 }
-#[utoipa::path(post,tag="installation",path="/api/v1/installation/initialize/job",request_body=Value,responses((status=200,body=Value)))]
+#[utoipa::path(post,tag="installation",path="/api/v1/installation/initialize/job",params(("serviceId"=Option<String>,Query,description="Stable local connection ID; omitted uses the default connection")),request_body=Value,responses((status=200,body=Value)))]
 pub(crate) async fn start(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
     Json(mut input): Json<Request>,
 ) -> Result<Json<Value>> {
+    let app = selected(&app, &headers, &query, true).await?;
     normalize_spec(&mut input.spec)?;
     let who = owner(&app, &headers, true).await?;
     let mut access = grant(&input.ticket, &who).await?;
@@ -304,9 +353,9 @@ pub(crate) async fn start(
             stored.operator_password = access.operator_password.clone();
         }
     }
-    let _guard = JOB_LOCK.lock().await;
+    let _guard = job_lock(&app).await;
     let _configuration_guard = CONFIG_LOCK.lock().await;
-    if RUNNING.lock().await.is_some() {
+    if RUNNING.lock().await.contains_key(&app.service_id) {
         return Err(Error(StatusCode::CONFLICT, "initialization_running"));
     }
     provision::validate(&app, &access, &input.spec).await?;
@@ -345,12 +394,15 @@ pub(crate) async fn start(
     job.error.clear();
     journal::write(&app, &job)?;
     let cancellation = tokio_util::sync::CancellationToken::new();
-    *RUNNING.lock().await = Some(cancellation.clone());
+    RUNNING
+        .lock()
+        .await
+        .insert(app.service_id.clone(), cancellation.clone());
     let result = job.public();
     let ticket = input.ticket;
     tokio::spawn(async move {
         let outcome = provision::run(&app, &mut job, &access, &cancellation).await;
-        let _guard = JOB_LOCK.lock().await;
+        let _guard = job_lock(&app).await;
         match outcome {
             Ok(()) => job.status = "applying".into(),
             Err(error) => {
@@ -365,10 +417,15 @@ pub(crate) async fn start(
         }
         let _ = journal::write(&app, &job);
         GRANTS.lock().await.remove(&ticket);
-        *RUNNING.lock().await = None;
+        RUNNING.lock().await.remove(&app.service_id);
         if job.status == "applying" {
-            tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
-            RELOAD.notify_one();
+            if app.service_id == "default" {
+                tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+                RELOAD.notify_one();
+            } else if let Ok(runtime) = connections::for_service(&app, &app.service_id).await {
+                drop(_guard);
+                activate_pending(runtime).await;
+            }
         }
     });
     Ok(Json(json!({"job":result})))
@@ -386,7 +443,7 @@ pub(crate) async fn activate_pending(app: Arc<App>) {
     {
         return;
     }
-    let callback = format!("{}/internal/mta-hook", app.origin);
+    let callback = app.hook_url();
     let mut reachable = false;
     for _ in 0..10 {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -408,7 +465,7 @@ pub(crate) async fn activate_pending(app: Arc<App>) {
             break;
         }
     }
-    let _guard = JOB_LOCK.lock().await;
+    let _guard = job_lock(&app).await;
     if journal::read(&app)
         .ok()
         .flatten()
@@ -455,11 +512,16 @@ pub(crate) async fn activate_pending(app: Arc<App>) {
     }
     let _ = journal::write(&app, &job);
 }
-#[utoipa::path(post,tag="installation",path="/api/v1/installation/initialize/cancel",responses((status=200,body=Value)))]
-pub(crate) async fn cancel(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
+#[utoipa::path(post,tag="installation",path="/api/v1/installation/initialize/cancel",params(("serviceId"=Option<String>,Query,description="Stable local connection ID; omitted uses the default connection")),responses((status=200,body=Value)))]
+pub(crate) async fn cancel(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Json<Value>> {
+    let app = selected(&app, &headers, &query, true).await?;
     let who = owner(&app, &headers, true).await?;
     {
-        let _guard = JOB_LOCK.lock().await;
+        let _guard = job_lock(&app).await;
         if journal::read(&app)?.is_some_and(|job| job.status == "applying") {
             return Err(Error(StatusCode::CONFLICT, "initialization_applying"));
         }
@@ -473,7 +535,7 @@ pub(crate) async fn cancel(State(app): State<Arc<App>>, headers: HeaderMap) -> R
         }
     }
     GRANTS.lock().await.retain(|_, g| g.owner != who);
-    if let Some(running) = RUNNING.lock().await.as_ref() {
+    if let Some(running) = RUNNING.lock().await.get(&app.service_id) {
         running.cancel();
     }
     Ok(Json(

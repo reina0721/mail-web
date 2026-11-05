@@ -2,7 +2,18 @@
 use super::*;
 use rand::Rng;
 use subtle::ConstantTimeEq;
-static CHECK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+async fn check_lock(app: &App) -> tokio::sync::OwnedMutexGuard<()> {
+    static LOCKS: std::sync::LazyLock<
+        std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    > = std::sync::LazyLock::new(Default::default);
+    let mutex = LOCKS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .entry(app.domain_id.clone())
+        .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+        .clone();
+    mutex.lock_owned().await
+}
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
         .route("/installation/readiness", get(report).post(run))
@@ -23,10 +34,14 @@ fn fingerprint(app: &App) -> String {
         serde_json::to_string(&services).unwrap_or_default()
     ))
 }
-fn current(app: &App) -> bool {
+fn current_default(app: &App) -> bool {
     match installation::load(&app.vault) {
         Ok(Some(saved)) => {
             let staged = App {
+                root: None,
+                revision: 0,
+                service_id: "default".into(),
+                domain_id: "default".into(),
                 db: app.db.clone(),
                 upstream: Stalwart {
                     http: app.upstream.http.clone(),
@@ -42,8 +57,35 @@ fn current(app: &App) -> bool {
         Err(_) => false,
     }
 }
+async fn current(app: &App) -> bool {
+    let root = app.root.as_deref().unwrap_or(app);
+    if app.service_id == "default" {
+        if !current_default(root) {
+            return false;
+        }
+    } else {
+        match installation::load(&root.vault) {
+            Ok(Some(saved))
+                if saved.origin != root.origin
+                    || saved.services.turnstile_site_key != root.services.turnstile_site_key
+                    || saved.services.turnstile_secret != root.services.turnstile_secret =>
+            {
+                return false;
+            }
+            Err(_) => return false,
+            _ => {}
+        }
+    }
+    if app.domain_id == "default" {
+        return true;
+    }
+    connections::for_domain(root, &app.domain_id)
+        .await
+        .is_ok_and(|saved| fingerprint(app) == fingerprint(&saved))
+}
 pub async fn ready(app: &App) -> Result<bool> {
-    if !app.services.ready() || !current(app) || installation::initialize::active(app).await? {
+    if !app.services.ready() || !current(app).await || installation::initialize::active(app).await?
+    {
         return Ok(false);
     }
     let row = db::query(db::Statement::ReadinessGet)
@@ -73,17 +115,41 @@ pub async fn view(app: &App) -> Result<Value> {
     let ready = ready(app).await?;
     let requested = registration::settings(app).await?["enabled"] == true;
     Ok(
-        json!({"ready":ready,"requestedEnabled":requested,"effectiveEnabled":requested&&ready,"items":items,"checkedAt":checked,"humanVerifiedAt":human,"manualDeclaration":app.services.policy_verified,"releaseVersion":env!("CARGO_PKG_VERSION"),"protocolScope":"版本协议回归与本站检查分开展示；本站未执行生产停机或 SMTP/JMAP 压力测试"}),
+        json!({"serviceId":app.service_id,"domainId":app.domain_id,"ready":ready,"requestedEnabled":requested,"effectiveEnabled":requested&&ready,"items":items,"checkedAt":checked,"humanVerifiedAt":human,"manualDeclaration":app.services.policy_verified,"releaseVersion":env!("CARGO_PKG_VERSION"),"protocolScope":"版本协议回归与本站检查分开展示；本站未执行生产停机或 SMTP/JMAP 压力测试"}),
     )
 }
-#[utoipa::path(get,path="/api/v1/installation/readiness",responses((status=200,body=Value)))]
-pub(crate) async fn report(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
+#[utoipa::path(get,path="/api/v1/installation/readiness",params(("domainId"=Option<String>,Query,description="Stable local domain ID; omitted uses the migrated default domain")),responses((status=200,body=Value)))]
+pub(crate) async fn report(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Json<Value>> {
     installation::authorize(&app, &headers, false).await?;
+    let app = connections::for_domain(
+        &app,
+        query
+            .get("domainId")
+            .map(String::as_str)
+            .unwrap_or("default"),
+    )
+    .await?;
     Ok(Json(view(&app).await?))
 }
-#[utoipa::path(post,path="/api/v1/installation/readiness",responses((status=200,body=Value)))]
-pub(crate) async fn run(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
+#[utoipa::path(post,path="/api/v1/installation/readiness",params(("domainId"=Option<String>,Query,description="Stable local domain ID; omitted uses the migrated default domain")),responses((status=200,body=Value)))]
+pub(crate) async fn run(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Json<Value>> {
     installation::authorize(&app, &headers, true).await?;
+    let app = connections::for_domain(
+        &app,
+        query
+            .get("domainId")
+            .map(String::as_str)
+            .unwrap_or("default"),
+    )
+    .await?;
     check(&app).await?;
     Ok(Json(view(&app).await?))
 }
@@ -141,7 +207,7 @@ fn hook_scope_matches(enable: &Value, expected: &str) -> bool {
     }) && scope_matches(enable["else"].as_str().unwrap_or_default(), expected)
 }
 pub async fn check(app: &App) -> Result<()> {
-    let _guard = CHECK.lock().await;
+    let _guard = check_lock(app).await;
     let revision = fingerprint(app);
     let s = &app.services;
     let mut items = Vec::new();
@@ -149,7 +215,7 @@ pub async fn check(app: &App) -> Result<()> {
     item!(
         "configuration",
         "运行凭据和网站来源",
-        if s.ready() && current(app) && !installation::initialize::active(app).await? {
+        if s.ready() && current(app).await && !installation::initialize::active(app).await? {
             Ok(())
         } else {
             Err(Error(
@@ -247,7 +313,7 @@ pub async fn check(app: &App) -> Result<()> {
         }
         .await
     );
-    item!("hook","专用 Hook 配置与账号作用范围",async{let value=app.upstream.call(&s.provisioning_key,"x:MtaHook/get",json!({"ids":[s.hook_id],"properties":["id","url","enable","stages","tempFailOnError","httpAuth"]})).await?;let h=&value["list"][0];if h["url"]!=format!("{}/internal/mta-hook",app.origin)||h["stages"]["data"]!=true||h["tempFailOnError"]!=true||h["httpAuth"]["@type"]!="Bearer"||!hook_scope_matches(&h["enable"],&policy::scope_expression(app).await?){return Err(Error(StatusCode::BAD_REQUEST,"hook_configuration_mismatch"));}Ok(())}.await);
+    item!("hook","专用 Hook 配置与账号作用范围",async{let value=app.upstream.call(&s.provisioning_key,"x:MtaHook/get",json!({"ids":[s.hook_id],"properties":["id","url","enable","stages","tempFailOnError","httpAuth"]})).await?;let h=&value["list"][0];if h["url"]!=app.hook_url()||h["stages"]["data"]!=true||h["tempFailOnError"]!=true||h["httpAuth"]["@type"]!="Bearer"||!hook_scope_matches(&h["enable"],&policy::scope_expression(app).await?){return Err(Error(StatusCode::BAD_REQUEST,"hook_configuration_mismatch"));}Ok(())}.await);
     item!(
         "callback",
         "网站回调认证（不代表协议实测）",
@@ -255,7 +321,7 @@ pub async fn check(app: &App) -> Result<()> {
             let response = app
                 .upstream
                 .http
-                .post(format!("{}/internal/mta-hook", app.origin))
+                .post(app.hook_url())
                 .bearer_auth(&s.hook_secret)
                 .json(&json!({"context":{"stage":"data"}}))
                 .send()
@@ -297,9 +363,32 @@ pub async fn check(app: &App) -> Result<()> {
     Ok(())
 }
 pub async fn worker(app: Arc<App>) {
+    let mut spawned = std::collections::HashSet::new();
     loop {
-        let _ = check(&app).await;
-        tokio::time::sleep(std::time::Duration::from_secs(300)).await;
+        if let Ok(rows) = db::query(db::Statement::ConnectionList)
+            .fetch_all(&app.db)
+            .await
+        {
+            for row in rows {
+                let id: String = row.get("id");
+                if !spawned.insert(id.clone()) {
+                    continue;
+                }
+                let root = app.clone();
+                tokio::spawn(async move {
+                    loop {
+                        if let Ok(context) = connections::for_domain(&root, &id).await {
+                            if context.service_id != "default" {
+                                installation::initialize::activate_pending(context.clone()).await;
+                            }
+                            let _ = check(&context).await;
+                        }
+                        tokio::select! {_=SHUTDOWN.cancelled()=>break,_=tokio::time::sleep(std::time::Duration::from_secs(300))=>{}}
+                    }
+                });
+            }
+        }
+        tokio::select! {_=SHUTDOWN.cancelled()=>break,_=tokio::time::sleep(std::time::Duration::from_secs(30))=>{}}
     }
 }
 
@@ -361,6 +450,10 @@ mod tests {
             policy_verified: true,
         };
         let app = App {
+            root: None,
+            revision: 0,
+            service_id: "default".into(),
+            domain_id: "default".into(),
             db: pool,
             upstream: Stalwart {
                 http: reqwest::Client::new(),
@@ -411,6 +504,10 @@ mod tests {
         let root = std::env::temp_dir().join(Uuid::new_v4().to_string());
         let db = db::connect(&root.join("test.sqlite")).await.unwrap();
         let app = Arc::new(App {
+            root: None,
+            revision: 0,
+            service_id: "default".into(),
+            domain_id: "default".into(),
             db,
             upstream: Stalwart {
                 http: reqwest::Client::new(),
@@ -447,6 +544,7 @@ mod tests {
                 .bind(hash(&ticket))
                 .bind(&revision)
                 .bind(db::now() + 600_000)
+                .bind(&app.domain_id)
                 .execute(&app.db)
                 .await
                 .unwrap();
@@ -507,9 +605,21 @@ mod tests {
         }
     }
 }
-#[utoipa::path(post,path="/api/v1/installation/readiness/link",responses((status=200,body=Value)))]
-pub(crate) async fn link(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
+#[utoipa::path(post,path="/api/v1/installation/readiness/link",params(("domainId"=Option<String>,Query,description="Stable local domain ID; omitted uses the migrated default domain")),responses((status=200,body=Value)))]
+pub(crate) async fn link(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Json<Value>> {
     installation::authorize(&app, &headers, true).await?;
+    let app = connections::for_domain(
+        &app,
+        query
+            .get("domainId")
+            .map(String::as_str)
+            .unwrap_or("default"),
+    )
+    .await?;
     check(&app).await?;
     let row = db::query(db::Statement::ReadinessGet)
         .bind(fingerprint(&app))
@@ -526,6 +636,7 @@ pub(crate) async fn link(State(app): State<Arc<App>>, headers: HeaderMap) -> Res
         .bind(hash(&ticket))
         .bind(fingerprint(&app))
         .bind(db::now() + 600_000)
+        .bind(&app.domain_id)
         .execute(&app.db)
         .await?;
     Ok(Json(
@@ -542,11 +653,23 @@ pub(crate) struct Input {
     #[serde(default)]
     code: String,
 }
+async fn ticket_context(app: &App, input: &Input) -> Result<Arc<App>> {
+    if input.ticket.len() != 64 || !input.ticket.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(Error(StatusCode::UNAUTHORIZED, "readiness_link_expired"));
+    }
+    let domain: String = db::scalar(db::Statement::ReadinessTicketDomain)
+        .bind(hash(&input.ticket))
+        .bind(db::now())
+        .fetch_optional(&app.db)
+        .await?
+        .ok_or(Error(StatusCode::UNAUTHORIZED, "readiness_link_expired"))?;
+    connections::for_domain(app, &domain).await
+}
 async fn session(app: &App, input: &Input) -> Result<sqlx::sqlite::SqliteRow> {
     if input.ticket.len() != 64 || !input.ticket.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(Error(StatusCode::UNAUTHORIZED, "readiness_link_expired"));
     }
-    if !current(app) {
+    if !current(app).await {
         return Err(Error(
             StatusCode::CONFLICT,
             "readiness_configuration_changed",
@@ -567,6 +690,7 @@ pub(crate) async fn interaction(
     Json(input): Json<Input>,
 ) -> Result<Json<Value>> {
     same_origin(&app, &headers)?;
+    let app = ticket_context(&app, &input).await?;
     let session = session(&app, &input).await?;
     Ok(Json(
         json!({"siteKey":app.services.turnstile_site_key,"mailSent":session.get::<bool,_>("captcha_verified")}),
@@ -579,6 +703,7 @@ pub(crate) async fn readiness_send(
     Json(input): Json<Input>,
 ) -> Result<Json<Value>> {
     same_origin(&app, &headers)?;
+    let app = ticket_context(&app, &input).await?;
     let _ = session(&app, &input).await?;
     let email = input.email.trim().to_lowercase();
     if !registration::address(&email)
@@ -634,6 +759,7 @@ pub(crate) async fn readiness_verify(
     Json(input): Json<Input>,
 ) -> Result<Json<Value>> {
     same_origin(&app, &headers)?;
+    let app = ticket_context(&app, &input).await?;
     let row = session(&app, &input).await?;
     let revision = fingerprint(&app);
     if db::query(db::Statement::ReadinessAttempt)

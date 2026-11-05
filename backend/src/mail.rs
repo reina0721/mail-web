@@ -83,6 +83,7 @@ pub(super) async fn create_mailbox(
     Json(input): Json<MailboxInput>,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     check_name(&input.name)?;
     Ok(Json(
         app.upstream
@@ -102,6 +103,7 @@ pub(super) async fn rename_mailbox(
     Json(input): Json<MailboxInput>,
 ) -> Result<StatusCode> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     check_name(&input.name)?;
     let mut update = json!({});
     update[id] = json!({"name":input.name});
@@ -121,6 +123,7 @@ pub(super) async fn delete_mailbox(
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let result = app
         .upstream
         .call(
@@ -162,6 +165,7 @@ pub(super) async fn batch(
     Json(input): Json<Batch>,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     if input.ids.is_empty() || input.ids.len() > 100 {
         return Err(Error(StatusCode::BAD_REQUEST, "batch_size_invalid"));
     }
@@ -321,6 +325,7 @@ pub(super) async fn save_draft(
     Json(input): Json<Draft>,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     Ok(Json(json!({"id":draft(&app,&me,&input).await?})))
 }
 #[utoipa::path(delete,path="/api/v1/drafts/{id}",params(("id"=String,Path)),responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
@@ -330,6 +335,7 @@ pub(super) async fn delete_draft(
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let old = app
         .upstream
         .call(
@@ -362,6 +368,7 @@ pub(super) async fn send(
     Json(input): Json<Send>,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     if input.idempotency_key.len() < 16
         || input.idempotency_key.len() > 100
         || input.draft.to.is_empty()
@@ -478,6 +485,7 @@ pub(super) async fn submission_status(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, false).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let row = db::query(db::Statement::MailSubmissionStatusSelectOperations)
         .bind(id)
         .bind(me.user)
@@ -551,6 +559,7 @@ pub(super) async fn upload(
     mut form: Multipart,
 ) -> Result<Json<UploadView>> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let metadata = app.upstream.session(&me.key).await?;
     let target = metadata["uploadUrl"]
         .as_str()
@@ -654,6 +663,7 @@ pub(super) async fn download(
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Response> {
     let me = identity(&app, &headers, false).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let message = q
         .get("message")
         .ok_or(Error(StatusCode::BAD_REQUEST, "message_required"))?;
@@ -729,6 +739,7 @@ pub(super) async fn download(
 #[utoipa::path(get,path="/api/v1/events",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn events(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Response> {
     let me = identify(&app, &headers, false, false).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let metadata = app.upstream.session(&me.key).await?;
     let target = metadata["eventSourceUrl"]
         .as_str()

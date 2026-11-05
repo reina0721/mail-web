@@ -14,9 +14,21 @@ pub(super) async fn validate(app: &App, access: &Grant, spec: &Spec) -> Result<(
     {
         return Err(Error(StatusCode::BAD_REQUEST, "site_configuration_invalid"));
     }
-    if configured(app)
+    if app.service_id != "default"
+        && (spec.public_origin != app.origin
+            || access.base != app.upstream.base
+            || !spec.cloudflare_account.is_empty())
+    {
+        return Err(Error(
+            StatusCode::BAD_REQUEST,
+            "connection_configuration_invalid",
+        ));
+    }
+    if app.service_id == "default"
+        && configured(app)
         && app.services.domain != spec.domain
-        && db::scalar::<i64>(db::Statement::InstallationUserCount)
+        && db::scalar::<i64>(db::Statement::ConnectionServiceUsers)
+            .bind(&app.service_id)
             .fetch_one(&app.db)
             .await?
             > 0
@@ -26,7 +38,8 @@ pub(super) async fn validate(app: &App, access: &Grant, spec: &Spec) -> Result<(
     // A source change is not an account/data migration.
     if configured(app)
         && app.upstream.base != access.base
-        && db::scalar::<i64>(db::Statement::InstallationUserCount)
+        && db::scalar::<i64>(db::Statement::ConnectionServiceUsers)
+            .bind(&app.service_id)
             .fetch_one(&app.db)
             .await?
             > 0
@@ -35,6 +48,14 @@ pub(super) async fn validate(app: &App, access: &Grant, spec: &Spec) -> Result<(
             StatusCode::CONFLICT,
             "initialization_server_migration_required",
         ));
+    }
+    if let Some(binding) = db::query(db::Statement::ConnectionDomainByName)
+        .bind(&spec.domain)
+        .fetch_optional(&app.db)
+        .await?
+        && binding.get::<String, _>("service_id") != app.service_id
+    {
+        return Err(Error(StatusCode::CONFLICT, "domain_already_bound"));
     }
     access
         .call(app, "x:MtaHook/get", json!({"properties":["id","url"]}))
@@ -117,7 +138,7 @@ async fn checkpoint(
         return Err(Error(StatusCode::CONFLICT, "initialization_cancelled"));
     }
     job.step = step.into();
-    let _guard = JOB_LOCK.lock().await;
+    let _guard = job_lock(app).await;
     journal::write(app, job)
 }
 fn created(value: &Value, name: &str) -> Result<String> {
@@ -285,7 +306,14 @@ async fn hook(app: &App, job: &mut Job, access: &Grant) -> Result<()> {
     if !job.resource("hook").is_empty() {
         return Ok(());
     }
-    let callback = format!("{}/internal/mta-hook", job.spec.public_origin);
+    let callback = if app.service_id == "default" {
+        format!("{}/internal/mta-hook", job.spec.public_origin)
+    } else {
+        format!(
+            "{}/internal/mta-hook/{}",
+            job.spec.public_origin, app.service_id
+        )
+    };
     let values = access.call(app, "x:MtaHook/get", json!({})).await?;
     let list: Vec<_> = values["list"].as_array().into_iter().flatten().collect();
     let secret = job
@@ -455,6 +483,10 @@ pub(super) async fn run(
         policy_verified: false,
     };
     let runtime = App {
+        root: app.root.clone(),
+        revision: app.revision,
+        service_id: app.service_id.clone(),
+        domain_id: app.domain_id.clone(),
         db: app.db.clone(),
         upstream: Stalwart {
             http: app.upstream.http.clone(),
@@ -499,6 +531,24 @@ pub(super) async fn run(
         ));
     }
     checkpoint(app, job, cancel, "apply").await?;
+    if app.service_id != "default" {
+        connections::apply_runtime(app, &services).await?;
+        job.completed = [
+            "domain",
+            "directory",
+            "notification",
+            "hook",
+            "turnstile",
+            "operator",
+            "scope",
+            "verify",
+            "apply",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
+        return Ok(());
+    }
     let _configuration = CONFIG_LOCK.lock().await;
     if !job.secrets.contains_key("previous-config")
         && let Some(previous) = load(&app.vault).map_err(|_| internal("initialization_read"))?

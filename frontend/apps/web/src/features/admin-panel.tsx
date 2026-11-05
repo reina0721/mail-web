@@ -8,7 +8,6 @@ import { TextField, SelectField, SwitchField } from '@community-go/ui-adapter/fo
 import { SearchBox } from '@community-go/ui-adapter/search-box';
 import { DrawerSurface, ConfirmDialog } from '@community-go/ui-adapter/overlays';
 import { api, errorMessage, ApiError } from '../lib/api';
-import { contractClient, unwrapContract } from '../lib/contract-client';
 import type { components } from '../lib/generated-api';
 import { MailIcon, EmptyState } from './mail-ui';
 import { AccountTable, AuditList, Status, states, type User, type Audit } from './admin-ui';
@@ -31,6 +30,8 @@ export function Admin({ onExpired, identity }: {
     onExpired: () => void;
     identity: string;
 }) {
+    const[domainId,setDomainId]=useState('default'),[domains,setDomains]=useState<{id:string;name:string;serviceName:string}[]>([]),[switchDomain,setSwitchDomain]=useState('');
+    const requestRevision=useRef(0);
     const [section, setSection] = useState<Section>('overview'), [users, setUsers] = useState<User[]>([]), [policy, setPolicy] = useState<Policy | null>(null), [savedPolicy, setSavedPolicy] = useState<Policy | null>(null), [tasks, setTasks] = useState<Tasks | null>(null), [audit, setAudit] = useState<Audit[]>([]), [ready, setReady] = useState(false);
     const [loading, setLoading] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [pending, setPending] = useState(false), [search, setSearch] = useState(''), [filter, setFilter] = useState('all'), [editing, setEditing] = useState<User | null>(null), [original, setOriginal] = useState<User | null>(null), [confirmDisable, setConfirmDisable] = useState(false), [leave, setLeave] = useState<Section | 'editor' | 'navigation' | null>(null), [leaveHref, setLeaveHref] = useState(''), [navigateTo, setNavigateTo] = useState('');
     const busy = useRef(false), mounted = useRef(true);
@@ -39,29 +40,30 @@ export function Admin({ onExpired, identity }: {
         onExpired();
     else
         setNotice(errorMessage(e)); }
-    async function load() { const [u, p, t, a] = await Promise.all([api<{
+    async function load(revision=++requestRevision.current) { const query='?domainId='+encodeURIComponent(domainId); const [u, p, t, a] = await Promise.all([api<{
             items: User[];
-        }>('/admin/users'), api<{
+        }>('/admin/users'+query), api<{
             policy: Policy;
             dependenciesReady: boolean;
-        }>('/admin/registration'), api<Tasks>('/admin/tasks'), api<{
+        }>('/admin/registration'+query), api<Tasks>('/admin/tasks'+query), api<{
             items: Audit[];
-        }>('/admin/audit')]); if (!mounted.current)
+        }>('/admin/audit'+query)]); if (!mounted.current || revision!==requestRevision.current)
         return; setUsers(u.items); setPolicy(p.policy); setSavedPolicy(p.policy); setReady(p.dependenciesReady); setTasks(t); setAudit(a.items); }
-    async function reload() { if(!policy)setLoading(true); setError(''); try {
-        await load();
+    async function reload() { const revision=++requestRevision.current; setLoading(true); setError(''); try {
+        await load(revision);
     }
     catch (e) {
-        if (mounted.current) {
+        if (mounted.current&&revision===requestRevision.current) {
             setError(errorMessage(e));
             failed(e);
         }
     }
     finally {
-        if (mounted.current)
+        if (mounted.current&&revision===requestRevision.current)
             setLoading(false);
     } }
-    useEffect(() => { mounted.current = true; const sync = () => { const id = new URLSearchParams(location.search).get('section'); setSection(sections.some(s => s.id === id) ? id as Section : 'overview'); }; sync(); void reload(); window.addEventListener('popstate', sync); return () => { mounted.current = false; window.removeEventListener('popstate', sync); }; }, []);
+    useEffect(() => { mounted.current = true; const sync = () => { const id = new URLSearchParams(location.search).get('section'); setSection(sections.some(s => s.id === id) ? id as Section : 'overview'); setDomainId(new URLSearchParams(location.search).get('domain')||'default'); }; sync(); void api<{domains:{id:string;name:string;serviceName:string}[]}>('/installation/connections').then(r=>setDomains(r.domains)).catch(failed); window.addEventListener('popstate', sync); return () => { mounted.current = false; window.removeEventListener('popstate', sync); }; }, []);
+    useEffect(()=>{void reload();},[domainId]);
     useEffect(() => { if (!dirty && !editorDirty)
         return; const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; }; window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn); }, [dirty, editorDirty]);
     useEffect(() => { if (!dirty && !editorDirty)
@@ -70,7 +72,8 @@ export function Admin({ onExpired, identity }: {
         return; event.preventDefault(); event.stopPropagation(); setLeaveHref(href); setLeave('navigation'); }; document.addEventListener('click', guard, true); return () => document.removeEventListener('click', guard, true); }, [dirty, editorDirty]);
     useEffect(() => { if (navigateTo)
         location.assign(navigateTo); }, [navigateTo]);
-    function go(id: Section) { setSection(id); history.pushState(null, '', '/admin/?section=' + id); setNotice(''); }
+    function applyDomain(id:string){requestRevision.current++;setLoading(true);setPolicy(null);setSavedPolicy(null);setUsers([]);setEditing(null);setOriginal(null);setNotice('');setDomainId(id);const url=new URL(location.href);url.searchParams.set('domain',id);history.replaceState(history.state,'',url);}
+    function go(id: Section) { setSection(id); history.pushState(null, '', '/admin/?section=' + id+'&domain='+encodeURIComponent(domainId)); setNotice(''); }
     function navigate(id: Section) { if (id === section)
         return; if (dirty) {
         setLeave(id);
@@ -94,10 +97,10 @@ export function Admin({ onExpired, identity }: {
     const current = sections.find(s => s.id === section)!;
     const openUser = (u: User) => { setEditing({ ...u }); setOriginal({ ...u }); };
     const editorValid = !!editing && [editing.quotaBytes, editing.hourlyRecipients, editing.dailyRecipients].every(n => Number.isSafeInteger(n) && n > 0) && editing.dailyRecipients >= editing.hourlyRecipients;
-    return <div className="admin-layout"><aside className="admin-sidebar"><p className="nav-eyebrow">工作空间</p><nav aria-label="后台分区">{sections.map(s => <button type="button" key={s.id} className={'folder-link' + (s.id === section ? ' is-current' : '')} aria-current={s.id === section ? 'page' : undefined} onClick={() => navigate(s.id)}><MailIcon name={s.icon}/><span>{s.label}</span></button>)}</nav><div className="sidebar-footer"><span className="sidebar-rule"/><span>平台运营</span><small>管理账号，保持有序。</small></div></aside><main id="operations-main" className="admin-content"><div className="admin-page-heading"><div><ContentSwapTransition contentKey={section}><h1>{current.label}</h1></ContentSwapTransition><p>{current.description}</p></div><IconAction variant="quiet" size="sm" tooltip label="刷新运营数据" disabled={loading||pending||dirty} onPress={()=>void reload()}><MailIcon name="refresh"/></IconAction></div>{notice && <div className="inline-notice admin-feedback" role="status">{notice}</div>}{loading ? <div className="admin-loading" role="status"><EmptyState title="正在加载运营数据…" description="正在获取账号、策略和操作记录。"/></div> : error ? <div className="load-error" role="alert"><EmptyState title="无法加载运营数据" description={error}/><Action onPress={() => void reload()}>重新加载</Action></div> : <div key={section} className="admin-section">
+    return <div className="admin-layout"><aside className="admin-sidebar"><p className="nav-eyebrow">工作空间</p><nav aria-label="后台分区">{sections.map(s => <button type="button" key={s.id} className={'folder-link' + (s.id === section ? ' is-current' : '')} aria-current={s.id === section ? 'page' : undefined} onClick={() => navigate(s.id)}><MailIcon name={s.icon}/><span>{s.label}</span></button>)}</nav><div className="sidebar-footer"><span className="sidebar-rule"/><span>平台运营</span><small>管理账号，保持有序。</small></div></aside><main id="operations-main" className="admin-content"><div className="admin-page-heading"><div><ContentSwapTransition contentKey={section}><h1>{current.label}</h1></ContentSwapTransition><p>{current.description}</p></div><div className="admin-header-controls"><div className="admin-domain-filter"><SelectField label="邮箱域名" value={domainId} disabled={pending} options={domains.map(d=>({value:d.id,label:d.name+' · '+d.serviceName}))} onValueChange={id=>{if(id!==domainId){if(dirty||editorDirty)setSwitchDomain(id);else applyDomain(id);}}}/></div><IconAction variant="quiet" size="sm" tooltip label="刷新运营数据" disabled={loading||pending||dirty} onPress={()=>void reload()}><MailIcon name="refresh"/></IconAction></div></div>{notice && <div className="inline-notice admin-feedback" role="status">{notice}</div>}{loading ? <div className="admin-loading" role="status"><EmptyState title="正在加载运营数据…" description="正在获取账号、策略和操作记录。"/></div> : error ? <div className="load-error" role="alert"><EmptyState title="无法加载运营数据" description={error}/><Action onPress={() => void reload()}>重新加载</Action></div> : <div key={section} className="admin-section">
  {section === 'overview' && <><div className="stat-grid">{[{ label: '邮箱账号', value: users.length, caption: '包含普通邮箱与运营账号', icon: 'users' }, { label: '已停用账号', value: users.filter(u => u.status === 'disabled').length, caption: '当前处于停用状态', icon: 'junk' }, { label: '公开注册', value: policy?.enabled ? (ready?'已开放':'暂停接受注册') : '已关闭', caption: ready ? '运行配置已就绪' : '尚未满足开放条件', icon: 'settings' }, { label: '待处理任务', value: taskCount, caption: '策略同步、凭据与开户核对', icon: 'activity' }].map(s => <section className="stat-card" key={s.label}><div><span>{s.label}</span><MailIcon name={s.icon}/></div><strong>{s.value}</strong><p>{s.caption}</p></section>)}</div><div className="overview-grid"><section className="admin-card"><div className="card-heading"><div><h2>邮箱账号</h2><p>最近返回的账号与当前状态</p></div><button type="button" className="text-link" onClick={() => navigate('users')}>查看全部 →</button></div>{users.length ? <AccountTable items={users.slice(0, 5)} onOpen={openUser}/> : <EmptyState title="暂无邮箱账号" description="创建的邮箱账号会出现在这里。" icon="users"/>}</section><section className="admin-card"><div className="card-heading"><h2>注册与运行配置</h2><MailIcon name="settings"/></div><div className="policy-summary"><span className={'status-badge ' + (policy?.enabled ? 'status-good' : 'status-muted')}>{policy?.enabled ? (ready?'策略已开启 · 当前可注册':'策略已开启 · 当前暂停注册') : '注册已关闭'}</span><h3>{ready ? '已具备开放条件' : '开放条件尚未满足'}</h3><p>{ready ? '可以在注册策略中调整公开注册和默认限额。' : '当前服务尚未满足注册依赖条件。保持注册关闭，完成部署验收后再开放。'}</p><dl><div><dt>普通邮箱名额</dt><dd>{policy?.maximumAccounts}</dd></div><div><dt>新邮箱容量</dt><dd>{(policy?.quotaBytes ?? 0) / 1048576} MiB</dd></div><div><dt>附件上限</dt><dd>{(policy?.attachmentBytes ?? 0) / 1048576} MiB</dd></div></dl><Action variant="secondary" fullWidth onPress={() => navigate('registration')}>管理注册策略</Action></div></section></div><section className="admin-card"><div className="card-heading"><div><h2>最近操作</h2><p>平台管理操作的审计记录</p></div><button type="button" className="text-link" onClick={() => navigate('activity')}>全部记录 →</button></div>{<AuditList audit={audit} users={users} limit={3}/>}</section></>}
  {section === 'users' && <section className="admin-card"><div className="card-heading"><div><h2>全部账号 <span className="count-pill">{users.length}</span></h2><p>容量和发信限额可在账号详情中调整。</p></div></div><div className="table-filters"><SearchBox label="搜索邮箱账号" placeholder="搜索邮箱地址…" value={search} onValueChange={setSearch}/><SelectField label="账号状态" value={filter} options={[{ value: 'all', label: '全部状态' }, ...Object.entries(states).map(([value, label]) => ({ value, label }))]} onValueChange={v => setFilter(v ?? 'all')}/></div>{filtered.length ? <AccountTable items={filtered} onOpen={openUser}/> : <EmptyState title="没有匹配的账号" description="调整搜索关键词或状态筛选。" icon="users"/>}<div className="table-footer">共 {filtered.length} 个账号</div></section>}
- {section === 'registration' && policy && <><RegistrationReadiness requestedEnabled={savedPolicy?.enabled} onChange={setReady}/><div className={'registration-banner ' + (ready ? 'is-ready' : '')}><MailIcon name={ready ? 'check' : 'junk'}/><div><strong>{ready ? '运行配置已就绪' : '公开注册尚未满足开放条件'}</strong><p>{ready ? '开放前，请核对以下默认策略。' : '请完成上方的注册条件清单；每项均提供检查结果和修复入口。'}</p></div></div><section className="admin-card policy-card"><div className="card-heading"><div><h2>公开注册</h2><p>控制新用户能否申请邮箱。</p></div><SwitchField label="开放公开注册" description="保存策略后生效" presentation="row" checked={policy.enabled} disabled={pending || (!ready && !policy.enabled)} onCheckedChange={v => setPolicy({ ...policy, enabled: v })}/></div><div className="policy-form"><h3>新账号默认策略</h3><p className="muted">仅应用于新账号；已有账号请在邮箱账号中单独调整。</p><div className="policy-fields">{policyFields.map(f => <TextField key={f.key} label={f.label} hint={f.hint} value={String(policy[f.key] / f.scale)} disabled={pending} onChange={e => setPolicy({ ...policy, [f.key]: Number(e.target.value) * f.scale })}/>)}</div>{!validPolicy(policy) && <p className="field-warning" role="alert">请填写正整数：邮箱最多 100 个，附件最多 20 MiB，每小时最多 10000 人，每天最多 100000 人且不低于每小时限额。</p>}</div><div className="form-footer"><span>{dirty ? '有未保存的更改' : '所有更改已保存'}</span><Action variant="secondary" disabled={pending || !dirty} onPress={() => setPolicy(savedPolicy)}>取消更改</Action><Action leadingIcon={<MailIcon name="check"/>} loading={pending} disabled={!dirty || !validPolicy(policy)} onPress={() => void run(async () => { unwrapContract(await contractClient.PATCH('/api/v1/admin/registration', { body: policy })); await load(); setNotice('注册策略已保存。'); })}>保存策略</Action></div></section></>}
+ {section === 'registration' && policy && <><RegistrationReadiness key={domainId} domainId={domainId} requestedEnabled={savedPolicy?.enabled} onChange={setReady}/><div className={'registration-banner ' + (ready ? 'is-ready' : '')}><MailIcon name={ready ? 'check' : 'junk'}/><div><strong>{ready ? '运行配置已就绪' : '公开注册尚未满足开放条件'}</strong><p>{ready ? '开放前，请核对以下默认策略。' : '请完成上方的注册条件清单；每项均提供检查结果和修复入口。'}</p></div></div><section className="admin-card policy-card"><div className="card-heading"><div><h2>公开注册</h2><p>控制新用户能否申请邮箱。</p></div><SwitchField label="开放公开注册" description="保存策略后生效" presentation="row" checked={policy.enabled} disabled={pending || (!ready && !policy.enabled)} onCheckedChange={v => setPolicy({ ...policy, enabled: v })}/></div><div className="policy-form"><h3>新账号默认策略</h3><p className="muted">仅应用于新账号；已有账号请在邮箱账号中单独调整。</p><div className="policy-fields">{policyFields.map(f => <TextField key={f.key} label={f.label} hint={f.hint} value={String(policy[f.key] / f.scale)} disabled={pending} onChange={e => setPolicy({ ...policy, [f.key]: Number(e.target.value) * f.scale })}/>)}</div>{!validPolicy(policy) && <p className="field-warning" role="alert">请填写正整数：邮箱最多 100 个，附件最多 20 MiB，每小时最多 10000 人，每天最多 100000 人且不低于每小时限额。</p>}</div><div className="form-footer"><span>{dirty ? '有未保存的更改' : '所有更改已保存'}</span><Action variant="secondary" disabled={pending || !dirty} onPress={() => setPolicy(savedPolicy)}>取消更改</Action><Action leadingIcon={<MailIcon name="check"/>} loading={pending} disabled={!dirty || !validPolicy(policy)} onPress={() => void run(async () => { await api('/admin/registration?domainId='+encodeURIComponent(domainId),{method:'PATCH',body:JSON.stringify(policy)}); await load(); setNotice('注册策略已保存。'); })}>保存策略</Action></div></section></>}
  {section === 'activity' && <><div className="task-grid">{[{ label: '账号策略同步', value: tasks?.accountPolicyJobs ?? 0 }, { label: '待撤销凭据', value: tasks?.credentialRevocations ?? 0 }, { label: '待核对开户', value: tasks?.registrationReconciliation ?? 0 }].map(t => <section key={t.label} className="stat-card"><span>{t.label}</span><strong>{t.value}</strong></section>)}</div><section className="admin-card task-summary"><div><h2>后台同步任务</h2><p>失败的同步会自动重试。开户恢复需要用户重新验证并提交密码。</p></div><Action variant="secondary" loading={pending} onPress={() => void run(async () => { const r = await api<{
             queued: number;
         }>('/admin/tasks/retry', { method: 'POST' }); await load(); setNotice(`已安排 ${r.queued} 项失败任务重新尝试。`); })}>重试失败任务</Action></section><section className="admin-card"><div className="card-heading"><div><h2>审计记录</h2><p>操作人、对象及执行结果</p></div><span className="count-pill">{audit.length} 条</span></div>{<AuditList audit={audit} users={users}/>}</section></>}
@@ -130,5 +133,6 @@ export function Admin({ onExpired, identity }: {
         setPolicy(savedPolicy);
         go(leave);
     } setLeave(null); }}/>
+ <ConfirmDialog triggerLabel="切换邮箱域名" title="放弃未保存的更改？" description="当前域名还有未保存的资料或策略。" impact="切换后将读取另一个域名的账号和注册设置。" cancelLabel="继续编辑" confirmLabel="放弃并切换" failureMessage="无法切换，请重试" isOpen={!!switchDomain} onOpenChange={open=>{if(!open)setSwitchDomain('');}} onConfirm={()=>{applyDomain(switchDomain);setSwitchDomain('');}}/>
  </div>;
 }

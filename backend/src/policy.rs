@@ -1,7 +1,18 @@
 use super::*;
 use subtle::ConstantTimeEq;
 
-static SCOPE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+async fn scope_lock(app: &App) -> tokio::sync::OwnedMutexGuard<()> {
+    static LOCKS: std::sync::LazyLock<
+        std::sync::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    > = std::sync::LazyLock::new(Default::default);
+    let mutex = LOCKS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .entry(app.service_id.clone())
+        .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+        .clone();
+    mutex.lock_owned().await
+}
 pub async fn sync_scope(app: &App) -> Result<()> {
     if app.services.hook_id.is_empty() {
         return Err(Error(
@@ -9,7 +20,7 @@ pub async fn sync_scope(app: &App) -> Result<()> {
             "submission_policy_missing",
         ));
     }
-    let _guard = SCOPE_LOCK.lock().await;
+    let _guard = scope_lock(app).await;
     let expression = scope_expression(app).await?;
     let mut update = json!({});
     update[&app.services.hook_id] = json!({"enable":{"else":expression}});
@@ -76,16 +87,18 @@ struct Address {
 async fn reserve(app: &App, login: &str, event: &str, count: i64) -> Result<bool> {
     let mut tx = db::begin(&app.db).await?;
     let normalized = login.to_lowercase();
-    let row = db::query(db::Statement::PolicyReserveSelectPlatformUsers)
+    let rows = db::query(db::Statement::PolicyReserveSelectPlatformUsers)
+        .bind(&app.service_id)
         .bind(&normalized)
         .bind(&normalized)
-        .bind(app.services.address(&normalized))
-        .fetch_optional(&mut *tx)
+        .bind(&normalized)
+        .fetch_all(&mut *tx)
         .await?;
-    let Some(row) = row else {
+    if rows.len() != 1 {
         tx.commit().await?;
         return Ok(false);
-    };
+    }
+    let row = &rows[0];
     if row.get::<String, _>("status") != "active" {
         return Ok(false);
     }
@@ -124,6 +137,7 @@ async fn reserve(app: &App, login: &str, event: &str, count: i64) -> Result<bool
         .bind(user)
         .bind(count)
         .bind(now)
+        .bind(&app.service_id)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
@@ -180,14 +194,27 @@ pub async fn hook(
 
 pub async fn scope_expression(app: &App) -> Result<String> {
     let rows = db::query(db::Statement::PolicySyncScopeSelectPlatformUsers)
+        .bind(&app.service_id)
         .fetch_all(&app.db)
         .await?;
     let mut names = Vec::<String>::new();
+    let mut principals = HashMap::<String, String>::new();
     for row in rows {
         let email: String = row.get("email");
-        names.push(email.split('@').next().unwrap_or("").to_string());
+        let local = email.split('@').next().unwrap_or("").to_string();
+        let account: String = row.get("stalwart_id");
+        for candidate in [&local, &email, &account] {
+            if principals
+                .get(candidate)
+                .is_some_and(|owner| owner != &email)
+            {
+                return Err(Error(StatusCode::CONFLICT, "hook_identity_ambiguous"));
+            }
+            principals.insert(candidate.clone(), email.clone());
+        }
+        names.push(local);
         names.push(email);
-        names.push(row.get("stalwart_id"));
+        names.push(account);
     }
     let expression = if names.is_empty() {
         "false".into()
@@ -201,6 +228,24 @@ pub async fn scope_expression(app: &App) -> Result<String> {
     Ok(expression)
 }
 
+pub async fn service_hook(
+    State(app): State<Arc<App>>,
+    Path(service): Path<String>,
+    headers: HeaderMap,
+    Json(input): Json<Hook>,
+) -> Result<Json<Value>> {
+    let domain: String = db::scalar(db::Statement::ConnectionServiceDomain)
+        .bind(service)
+        .fetch_optional(&app.db)
+        .await?
+        .ok_or(Error(
+            StatusCode::UNAUTHORIZED,
+            "hook_authentication_failed",
+        ))?;
+    let app = connections::for_domain(&app, &domain).await?;
+    hook(State(app), headers, Json(input)).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,6 +256,10 @@ mod tests {
         let id = Uuid::new_v4();
         sqlx::query("INSERT INTO platform_users(id,email,recovery_email,stalwart_id,status) VALUES (?,'u@mail.example','r@example.net','test','active')").bind(id).execute(&pool).await.unwrap();
         let app = Arc::new(App {
+            root: None,
+            revision: 0,
+            service_id: "default".into(),
+            domain_id: "default".into(),
             db: pool,
             upstream: Stalwart {
                 http: reqwest::Client::new(),
@@ -257,6 +306,10 @@ mod tests {
         app.db.close().await;
         let restored = db::connect(&root.join("mail.sqlite")).await.unwrap();
         let restarted = App {
+            root: None,
+            revision: 0,
+            service_id: "default".into(),
+            domain_id: "default".into(),
             db: restored,
             ..(*app).clone()
         };

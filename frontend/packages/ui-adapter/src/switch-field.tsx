@@ -39,8 +39,8 @@ export function SwitchField({
             </span>
           ) : null}
         </span>
-        <Switch.Control className="flex h-6 w-11 shrink-0 items-center rounded-full bg-border-strong p-0.5 transition-colors group-data-[selected=true]:bg-brand">
-          <Switch.Thumb className="ms-0 size-5 rounded-full bg-surface shadow-none group-data-[selected=true]:ms-5" />
+        <Switch.Control>
+          <Switch.Thumb />
         </Switch.Control>
       </Switch.Content>
     </Switch>

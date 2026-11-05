@@ -4,6 +4,7 @@ use subtle::ConstantTimeEq;
 
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
+        .route("/registration/domains", get(public_domains))
         .route("/registration/policy", get(public_policy))
         .route("/registration/challenges", post(challenge))
         .route("/registration/verify", post(verify))
@@ -13,6 +14,13 @@ pub fn routes() -> Router<Arc<App>> {
 }
 
 pub async fn settings(app: &App) -> Result<Value> {
+    if app.domain_id != "default" {
+        let value: String = db::scalar(db::Statement::ConnectionPolicyGet)
+            .bind(&app.domain_id)
+            .fetch_one(&app.db)
+            .await?;
+        return serde_json::from_str(&value).map_err(|_| internal("settings_invalid"));
+    }
     let value: String = db::scalar(db::Statement::RegistrationSettingsSelectPlatformSettings)
         .fetch_one(&app.db)
         .await?;
@@ -29,10 +37,19 @@ pub(super) struct PublicRegistrationPolicy {
     maximum_accounts: i64,
     attachment_bytes: i64,
 }
-#[utoipa::path(get,path="/api/v1/registration/policy",responses((status=200,body=PublicRegistrationPolicy)))]
+#[utoipa::path(get,path="/api/v1/registration/policy",params(("domainId"=Option<String>,Query,description="Stable local domain ID; omitted uses the migrated default domain")),responses((status=200,body=PublicRegistrationPolicy)))]
 pub(super) async fn public_policy(
     State(app): State<Arc<App>>,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<PublicRegistrationPolicy>> {
+    let app = connections::for_domain(
+        &app,
+        query
+            .get("domainId")
+            .map(String::as_str)
+            .unwrap_or("default"),
+    )
+    .await?;
     let p = settings(&app).await?;
     Ok(Json(PublicRegistrationPolicy {
         enabled: p["enabled"] == true && readiness::ready(&app).await?,
@@ -144,6 +161,8 @@ pub async fn notify(app: &App, to: &str, subject: &str, text: &str) -> Result<()
 }
 #[derive(Deserialize, ToSchema)]
 pub(super) struct ChallengeInput {
+    #[serde(default, rename = "domainId")]
+    domain_id: Option<String>,
     email: String,
     purpose: String,
     turnstile_token: String,
@@ -172,6 +191,16 @@ pub(super) async fn challenge(
     )
     .await?;
     let email = input.email.trim().to_lowercase();
+    let domain = if input.purpose == "recovery" {
+        db::scalar::<String>(db::Statement::RecoveryDomain)
+            .bind(&email)
+            .fetch_optional(&app.db)
+            .await?
+            .unwrap_or_else(|| "default".into())
+    } else {
+        input.domain_id.clone().unwrap_or_else(|| "default".into())
+    };
+    let app = connections::for_domain(&app, &domain).await?;
     if !address(&email)
         || app.services.is_local_address(&email)
         || !matches!(input.purpose.as_str(), "registration" | "recovery")
@@ -196,6 +225,7 @@ pub(super) async fn challenge(
         .bind(&input.purpose)
         .bind(digest)
         .bind(db::now() + 600000)
+        .bind(&app.domain_id)
         .execute(&app.db)
         .await?;
     notify(
@@ -231,6 +261,7 @@ pub(super) async fn verify(
         .fetch_optional(&app.db)
         .await?
         .ok_or(Error(StatusCode::BAD_REQUEST, "challenge_expired"))?;
+    let app = connections::for_domain(&app, &row.get::<String, _>("domain_id")).await?;
     let digest = hash(&format!(
         "{}:{}:{}",
         input.challenge_id, input.code, app.services.turnstile_secret
@@ -257,11 +288,16 @@ pub(super) async fn verify(
         verification_token: claim,
     }))
 }
-#[utoipa::path(get,path="/api/v1/registration/availability",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
+#[utoipa::path(get,path="/api/v1/registration/availability",params(("domainId"=Option<String>,Query,description="Stable local domain ID; omitted uses the migrated default domain")),responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn availability(
     State(app): State<Arc<App>>,
     Query(q): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>> {
+    let app = connections::for_domain(
+        &app,
+        q.get("domainId").map(String::as_str).unwrap_or("default"),
+    )
+    .await?;
     policy::rate(&app, "availability-global", 120, 60000).await?;
     let name = q.get("name").map(String::as_str).unwrap_or("");
     if !local_part(name) {
@@ -287,6 +323,12 @@ pub(super) async fn register(
     Json(input): Json<Register>,
 ) -> Result<StatusCode> {
     same_origin(&app, &headers)?;
+    let domain: String = db::scalar(db::Statement::ChallengeDomain)
+        .bind(input.challenge_id)
+        .fetch_optional(&app.db)
+        .await?
+        .ok_or(Error(StatusCode::BAD_REQUEST, "verification_required"))?;
+    let app = connections::for_domain(&app, &domain).await?;
     let p = settings(&app).await?;
     if p["enabled"] != true || !readiness::ready(&app).await? {
         return Err(Error(StatusCode::FORBIDDEN, "registration_closed"));
@@ -296,6 +338,29 @@ pub(super) async fn register(
     }
     let email = app.services.address(&input.name);
     let mut tx = db::begin(&app.db).await?;
+    // A bare SASL principal must resolve to exactly one managed mailbox on this
+    // service. Reject ambiguity before provisioning any remote resource.
+    if db::scalar::<i64>(db::Statement::RegistrationPrincipalConflict)
+        .bind(&app.service_id)
+        .bind(&email)
+        .bind(input.name.to_lowercase())
+        .bind(input.name.to_lowercase())
+        .fetch_one(&mut *tx)
+        .await?
+        > 0
+    {
+        return Err(Error(StatusCode::CONFLICT, "address_unavailable"));
+    }
+    let connection = db::query(db::Statement::ConnectionService)
+        .bind(&app.service_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if connection.get::<i64, _>("revision") != app.revision {
+        return Err(Error(
+            StatusCode::CONFLICT,
+            "connection_configuration_changed",
+        ));
+    }
     let challenge = db::query(db::Statement::RegistrationRegisterSelectVerificationChallenges)
         .bind(input.challenge_id)
         .bind(hash(&input.verification_token))
@@ -319,6 +384,7 @@ pub(super) async fn register(
         row.get::<Uuid, _>("id")
     } else {
         let count: i64 = db::scalar(db::Statement::RegistrationRegisterSelectPlatformUsers2)
+            .bind(&app.domain_id)
             .fetch_one(&mut *tx)
             .await?;
         if count >= p["maximumAccounts"].as_i64().unwrap_or(100) {
@@ -333,6 +399,8 @@ pub(super) async fn register(
             .bind(p["hourlyRecipients"].as_i64().unwrap_or(10))
             .bind(p["dailyRecipients"].as_i64().unwrap_or(50))
             .bind(p["quotaBytes"].as_i64().unwrap_or(1073741824))
+            .bind(&app.service_id)
+            .bind(&app.domain_id)
             .execute(&mut *tx)
             .await
             .map_err(|_| Error(StatusCode::CONFLICT, "address_unavailable"))?;
@@ -444,6 +512,12 @@ pub(super) async fn recover(
     Json(input): Json<Recovery>,
 ) -> Result<StatusCode> {
     same_origin(&app, &headers)?;
+    let domain: String = db::scalar(db::Statement::ChallengeDomain)
+        .bind(input.challenge_id)
+        .fetch_optional(&app.db)
+        .await?
+        .ok_or(Error(StatusCode::BAD_REQUEST, "verification_required"))?;
+    let app = connections::for_domain(&app, &domain).await?;
     if !(12..=128).contains(&input.password.chars().count()) {
         return Err(Error(StatusCode::BAD_REQUEST, "password_invalid"));
     }
@@ -462,7 +536,7 @@ pub(super) async fn recover(
     {
         let user_id: Uuid = user.get("id");
         let upstream: String = user.get("stalwart_id");
-        let _account_guard = account_lock(&upstream).await;
+        let _account_guard = account_lock(&format!("{}:{}", app.service_id, upstream)).await;
         // Revoke platform access before making an upstream password change.
         super::revoke_user(&app, user_id).await?;
         let mut update = json!({});
@@ -499,4 +573,30 @@ mod tests {
         assert!(local_part("hello-world"));
         assert!(!address("bad\r\n@example.com"));
     }
+}
+
+#[utoipa::path(get,path="/api/v1/registration/domains",responses((status=200,body=Value)))]
+pub(crate) async fn public_domains(State(app): State<Arc<App>>) -> Result<Json<Value>> {
+    let rows = db::query(db::Statement::ConnectionList)
+        .fetch_all(&app.db)
+        .await?;
+    let mut items = Vec::new();
+    for row in rows {
+        let name: String = row.get("name");
+        if name.is_empty() {
+            continue;
+        }
+        let id: String = row.get("id");
+        let (enabled, ready) = match connections::for_domain(&app, &id).await {
+            Ok(scoped) => (
+                settings(&scoped).await.is_ok_and(|p| p["enabled"] == true),
+                readiness::ready(&scoped).await.unwrap_or(false),
+            ),
+            Err(_) => (false, false),
+        };
+        items.push(
+            json!({"id":id,"domain":name,"enabled":enabled&&ready,"dependenciesReady":ready}),
+        );
+    }
+    Ok(Json(json!({"items":items})))
 }

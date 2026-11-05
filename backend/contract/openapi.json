@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.2.0-alpha.10"
+    "version": "0.3.0-alpha.1"
   },
   "paths": {
     "/api/v1/account": {
@@ -170,12 +170,59 @@
         }
       }
     },
+    "/api/v1/account/capabilities": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "capabilities",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/account/usage": {
+      "get": {
+        "tags": [
+          "account"
+        ],
+        "operationId": "usage",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/admin/audit": {
       "get": {
         "tags": [
           "account"
         ],
         "operationId": "audit",
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "query",
+            "description": "Stable local domain ID; omitted uses the migrated default domain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -203,6 +250,17 @@
           "account"
         ],
         "operationId": "get_settings",
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "query",
+            "description": "Stable local domain ID; omitted uses the migrated default domain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -228,6 +286,17 @@
           "account"
         ],
         "operationId": "put_settings",
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "query",
+            "description": "Stable local domain ID; omitted uses the migrated default domain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -265,6 +334,17 @@
           "account"
         ],
         "operationId": "tasks",
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "query",
+            "description": "Stable local domain ID; omitted uses the migrated default domain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -292,6 +372,17 @@
           "account"
         ],
         "operationId": "retry_tasks",
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "query",
+            "description": "Stable local domain ID; omitted uses the migrated default domain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -316,6 +407,17 @@
           "account"
         ],
         "operationId": "users",
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "query",
+            "description": "Stable local domain ID; omitted uses the migrated default domain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -900,12 +1002,119 @@
         }
       }
     },
+    "/api/v1/installation/connections": {
+      "get": {
+        "tags": [
+          "connections"
+        ],
+        "operationId": "list",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "connections"
+        ],
+        "operationId": "save",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/installation/connections/prepare": {
+      "post": {
+        "tags": [
+          "connections"
+        ],
+        "operationId": "prepare",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/installation/connections/{id}": {
+      "get": {
+        "tags": [
+          "connections"
+        ],
+        "operationId": "details",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/installation/discover": {
       "post": {
         "tags": [
           "installation"
         ],
         "operationId": "discover",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "description": "Stable local connection ID; omitted uses the default connection",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -940,6 +1149,17 @@
           "installation"
         ],
         "operationId": "authorize_temporary",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "description": "Stable local connection ID; omitted uses the default connection",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -966,6 +1186,17 @@
           "installation"
         ],
         "operationId": "cancel",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "description": "Stable local connection ID; omitted uses the default connection",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -984,6 +1215,17 @@
           "installation"
         ],
         "operationId": "progress",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "description": "Stable local connection ID; omitted uses the default connection",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1000,6 +1242,17 @@
           "installation"
         ],
         "operationId": "start",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "description": "Stable local connection ID; omitted uses the default connection",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1026,6 +1279,17 @@
           "installation"
         ],
         "operationId": "preflight",
+        "parameters": [
+          {
+            "name": "serviceId",
+            "in": "query",
+            "description": "Stable local connection ID; omitted uses the default connection",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -1078,6 +1342,17 @@
           "readiness"
         ],
         "operationId": "report",
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "query",
+            "description": "Stable local domain ID; omitted uses the migrated default domain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1094,6 +1369,17 @@
           "readiness"
         ],
         "operationId": "run",
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "query",
+            "description": "Stable local domain ID; omitted uses the migrated default domain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1112,6 +1398,17 @@
           "readiness"
         ],
         "operationId": "link",
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "query",
+            "description": "Stable local domain ID; omitted uses the migrated default domain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1466,6 +1763,17 @@
           "registration"
         ],
         "operationId": "availability",
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "query",
+            "description": "Stable local domain ID; omitted uses the migrated default domain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1523,12 +1831,41 @@
         }
       }
     },
+    "/api/v1/registration/domains": {
+      "get": {
+        "tags": [
+          "registration"
+        ],
+        "operationId": "public_domains",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/registration/policy": {
       "get": {
         "tags": [
           "registration"
         ],
         "operationId": "public_policy",
+        "parameters": [
+          {
+            "name": "domainId",
+            "in": "query",
+            "description": "Stable local domain ID; omitted uses the migrated default domain",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1715,6 +2052,12 @@
           "turnstile_token"
         ],
         "properties": {
+          "domainId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "email": {
             "type": "string"
           },
@@ -2213,11 +2556,15 @@
       "SessionView": {
         "type": "object",
         "required": [
+          "domainId",
           "id",
           "email",
           "operator"
         ],
         "properties": {
+          "domainId": {
+            "type": "string"
+          },
           "email": {
             "type": "string"
           },

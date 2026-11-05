@@ -1,6 +1,7 @@
 mod account;
 mod bootstrap;
 mod config;
+mod connections;
 mod crypto;
 mod db;
 mod installation;
@@ -36,6 +37,10 @@ static SHUTDOWN: std::sync::LazyLock<tokio_util::sync::CancellationToken> =
 
 #[derive(Clone)]
 struct App {
+    revision: i64,
+    root: Option<Arc<App>>,
+    service_id: String,
+    domain_id: String,
     db: db::Pool,
     upstream: Stalwart,
     vault: Vault,
@@ -43,6 +48,13 @@ struct App {
     services: config::Services,
 }
 impl App {
+    fn hook_url(&self) -> String {
+        if self.service_id == "default" {
+            format!("{}/internal/mta-hook", self.origin)
+        } else {
+            format!("{}/internal/mta-hook/{}", self.origin, self.service_id)
+        }
+    }
     fn cookie_name(&self, kind: &str) -> String {
         format!(
             "{}mail_{kind}",
@@ -206,6 +218,8 @@ struct Login {
 }
 #[derive(Serialize, ToSchema)]
 struct SessionView {
+    #[serde(rename = "domainId")]
+    domain_id: String,
     id: Uuid,
     email: String,
     operator: bool,
@@ -246,7 +260,13 @@ async fn login(
         .await?
         .ok_or(Error(StatusCode::UNAUTHORIZED, "credentials_invalid"))?;
     let email: String = row.get("email");
-    let _account_guard = account_lock(&row.get::<String, _>("stalwart_id")).await;
+    let app = connections::for_user(&app, row.get("id")).await?;
+    let _account_guard = account_lock(&format!(
+        "{}:{}",
+        app.service_id,
+        row.get::<String, _>("stalwart_id")
+    ))
+    .await;
     let expires = Utc::now() + Duration::hours(8);
     let id = token();
     let csrf = token();
@@ -308,7 +328,9 @@ async fn login(
 #[utoipa::path(get,path="/api/v1/auth/session",responses((status=200,body=SessionView),(status=401,description="No active session")))]
 async fn session(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<SessionView>> {
     let me = identify(&app, &headers, false, false).await?;
+    let app = connections::for_user(&app, me.user).await?;
     Ok(Json(SessionView {
+        domain_id: app.domain_id.clone(),
         id: me.user,
         email: me.email,
         operator: me.operator,
@@ -317,6 +339,7 @@ async fn session(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json
 #[utoipa::path(post,path="/api/v1/auth/logout",responses((status=200,body=Value),(status=204,description="Completed")))]
 async fn logout(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Response> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let mut tx = db::begin(&app.db).await?;
     db::query(db::Statement::MainLogoutUpdateSessions)
         .bind(&me.session)
@@ -346,6 +369,7 @@ async fn logout(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Respo
 #[utoipa::path(get,path="/api/v1/mailboxes",responses((status=200,body=Value),(status=204,description="Completed")))]
 async fn mailboxes(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
     let me = identify(&app, &headers, false, false).await?;
+    let app = connections::for_user(&app, me.user).await?;
     Ok(Json(
         app.upstream
             .call(&me.key, "Mailbox/get", json!({"accountId":me.account}))
@@ -359,6 +383,7 @@ async fn messages(
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>> {
     let me = identify(&app, &headers, false, false).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let mut filter = json!({});
     if let Some(mailbox) = query.get("mailbox") {
         filter["inMailbox"] = json!(mailbox);
@@ -388,6 +413,7 @@ async fn message(
     Path(id): Path<String>,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, false).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let result=app.upstream.call(&me.key,"Email/get",json!({"accountId":me.account,"ids":[id],"fetchTextBodyValues":true,"fetchHTMLBodyValues":true,"properties":["htmlBody","messageId","references","id","subject","from","to","cc","bcc","receivedAt","keywords","mailboxIds","textBody","bodyValues","attachments"]})).await?;
     let msg = result["list"]
         .as_array()
@@ -482,6 +508,7 @@ async fn update_message(
     Json(input): Json<MessagePatch>,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let mut changes = json!({});
     if let Some(read) = input.read {
         changes["keywords/$seen"] = if read { json!(true) } else { Value::Null };
@@ -564,6 +591,10 @@ async fn health(State(app): State<Arc<App>>) -> Result<Json<Value>> {
         message,
         update_message,
         health,
+        connections::list,
+        connections::save,
+        connections::prepare,
+        connections::details,
         installation::status,
         installation::read_config,
         installation::save_config,
@@ -581,12 +612,15 @@ async fn health(State(app): State<Arc<App>>) -> Result<Json<Value>> {
         installation::initialize::progress,
         installation::initialize::cancel,
         registration::public_policy,
+        registration::public_domains,
         registration::challenge,
         registration::verify,
         registration::availability,
         registration::register,
         registration::recover,
         account::profile,
+        account::usage,
+        account::capabilities,
         account::update_profile,
         account::password,
         account::sessions,
@@ -689,7 +723,15 @@ async fn revocations(app: Arc<App>) {
                 .fetch_optional(&app.db)
                 .await;
             if let Ok(Some(row)) = row {
-                let _account_guard = account_lock(&row.get::<String, _>("stalwart_id")).await;
+                let Ok(app) = connections::for_user(&app, row.get("user_id")).await else {
+                    continue;
+                };
+                let _account_guard = account_lock(&format!(
+                    "{}:{}",
+                    app.service_id,
+                    row.get::<String, _>("stalwart_id")
+                ))
+                .await;
                 if revoke_upstream(
                     &app,
                     &sid,
@@ -824,6 +866,10 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         }
     };
     let app = Arc::new(App {
+        root: None,
+        revision: 0,
+        service_id: "default".into(),
+        domain_id: "default".into(),
         db,
         vault,
         services: saved
@@ -848,6 +894,9 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .await?;
         return Ok(());
     }
+    connections::seed_default(&app)
+        .await
+        .map_err(|error| error.1)?;
     account::initialize_permission_policy(&app).await?;
     mail::clean_staging(std::path::Path::new(
         &std::env::var("STAGING_DIR").unwrap_or_else(|_| "data/staging".into()),
@@ -857,6 +906,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         tokio::spawn(revocations(app.clone()));
     }
     let api = Router::new()
+        .merge(connections::routes())
         .merge(registration::routes())
         .merge(readiness::routes())
         .merge(account::routes())
@@ -871,6 +921,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .route("/messages/{id}", get(message).patch(update_message));
     let routes = Router::new()
         .route("/internal/mta-hook", post(policy::hook))
+        .route("/internal/mta-hook/{service}", post(policy::service_hook))
         .nest("/api/v1", api)
         .fallback_service(
             ServeDir::new(

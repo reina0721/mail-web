@@ -131,6 +131,8 @@ pub async fn initialize_permission_policy(app: &App) -> std::result::Result<(), 
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
         .route("/account", get(profile).patch(update_profile))
+        .route("/account/usage", get(usage))
+        .route("/account/capabilities", get(capabilities))
         .route("/auth/password", post(password))
         .route("/auth/sessions", get(sessions))
         .route("/auth/sessions/{id}", axum::routing::delete(revoke_session))
@@ -163,6 +165,7 @@ pub async fn audit_event(
         .bind(action)
         .bind(subject)
         .bind(outcome)
+        .bind(&app.domain_id)
         .execute(&app.db)
         .await?;
     Ok(())
@@ -180,10 +183,19 @@ pub(super) async fn profile(
     headers: HeaderMap,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, false).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let row = db::query(db::Statement::AccountProfileSelectPlatformUsers)
         .bind(me.user)
         .fetch_one(&app.db)
         .await?;
+    Ok(Json(
+        json!({"email":me.email,"displayName":row.get::<String,_>("display_name"),"preferences":serde_json::from_str::<Value>(&row.get::<String,_>("preferences")).unwrap_or(json!({})),"quotaBytes":row.get::<i64,_>("quota_bytes"),"usedBytes":Value::Null}),
+    ))
+}
+#[utoipa::path(get,path="/api/v1/account/usage",responses((status=200,body=Value)))]
+pub(crate) async fn usage(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
+    let me = identity(&app, &headers, false).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let metadata = app
         .upstream
         .call(
@@ -193,7 +205,42 @@ pub(super) async fn profile(
         )
         .await?;
     Ok(Json(
-        json!({"email":me.email,"displayName":row.get::<String,_>("display_name"),"preferences":serde_json::from_str::<Value>(&row.get::<String,_>("preferences")).unwrap_or(json!({})),"quotaBytes":row.get::<i64,_>("quota_bytes"),"usedBytes":metadata["list"][0]["usedDiskQuota"]}),
+        json!({"usedBytes":metadata["list"][0]["usedDiskQuota"].as_u64(),"quotaBytes":metadata["list"][0]["quotas"]["maxDiskQuota"].as_u64()}),
+    ))
+}
+#[utoipa::path(get,path="/api/v1/account/capabilities",responses((status=200,body=Value)))]
+pub(crate) async fn capabilities(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>> {
+    let me = identity(&app, &headers, false).await?;
+    let app = connections::for_user(&app, me.user).await?;
+    let response = app
+        .upstream
+        .http
+        .get(format!("{}/api/account", app.upstream.base))
+        .bearer_auth(&me.key)
+        .timeout(std::time::Duration::from_secs(5))
+        .send()
+        .await
+        .map_err(|_| Error(StatusCode::BAD_GATEWAY, "mail_service_unavailable"))?;
+    if response.status() == StatusCode::UNAUTHORIZED {
+        return Err(Error(StatusCode::UNAUTHORIZED, "credentials_invalid"));
+    }
+    if !response.status().is_success() {
+        return Err(Error(StatusCode::BAD_GATEWAY, "capabilities_unavailable"));
+    }
+    let value: Value = response
+        .json()
+        .await
+        .map_err(|_| internal("capabilities_invalid"))?;
+    let has = |permission: &str| {
+        value["permissions"]
+            .as_array()
+            .is_some_and(|items| items.iter().any(|p| p == permission))
+    };
+    Ok(Json(
+        json!({"changePassword":has("sysAccountPasswordUpdate"),"appPasswords":has("sysAppPasswordGet")&&has("sysAppPasswordCreate")&&has("sysAppPasswordDestroy")}),
     ))
 }
 #[derive(Deserialize, ToSchema)]
@@ -209,6 +256,7 @@ pub(super) async fn update_profile(
     Json(input): Json<ProfileInput>,
 ) -> Result<StatusCode> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     if input.display_name.chars().count() > 100
         || !matches!(input.language.as_str(), "zh-CN" | "en")
         || !matches!(input.theme.as_str(), "system" | "light" | "dark")
@@ -235,10 +283,11 @@ pub(super) async fn password(
     Json(input): Json<PasswordInput>,
 ) -> Result<StatusCode> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     if !(12..=128).contains(&input.new_password.chars().count()) {
         return Err(Error(StatusCode::BAD_REQUEST, "password_invalid"));
     }
-    let _account_guard = account_lock(&me.account).await;
+    let _account_guard = account_lock(&format!("{}:{}", app.service_id, me.account)).await;
     app.upstream
         .password_call(&me.email, &input.current_password, "Core/echo", json!({}))
         .await?;
@@ -252,6 +301,7 @@ pub(super) async fn sessions(
     headers: HeaderMap,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, false).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let rows = db::query(db::Statement::AccountSessionsSelectSessions)
         .bind(me.user)
         .bind(db::now())
@@ -269,6 +319,7 @@ pub(super) async fn revoke_session(
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let mut tx = db::begin(&app.db).await?;
     db::query(db::Statement::AccountRevokeSessionUpdateSessions)
         .bind(db::now())
@@ -291,6 +342,7 @@ pub(super) async fn revoke_others(
     headers: HeaderMap,
 ) -> Result<StatusCode> {
     let me = identity(&app, &headers, true).await?;
+    let app = connections::for_user(&app, me.user).await?;
     let mut tx = db::begin(&app.db).await?;
     db::query(db::Statement::AccountRevokeOthersUpdateSessions)
         .bind(db::now())
@@ -313,6 +365,7 @@ pub(super) async fn app_passwords(
     headers: HeaderMap,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, false).await?;
+    let app = connections::for_user(&app, me.user).await?;
     Ok(Json(
         app.upstream
             .call(
@@ -334,7 +387,8 @@ pub(super) async fn create_app_password(
     Json(input): Json<CredentialInput>,
 ) -> Result<Json<Value>> {
     let me = identity(&app, &headers, true).await?;
-    let _account_guard = account_lock(&me.account).await;
+    let app = connections::for_user(&app, me.user).await?;
+    let _account_guard = account_lock(&format!("{}:{}", app.service_id, me.account)).await;
     if input.description.is_empty() || input.description.len() > 100 {
         return Err(Error(StatusCode::BAD_REQUEST, "description_invalid"));
     }
@@ -347,16 +401,30 @@ pub(super) async fn delete_app_password(
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
     let me = identity(&app, &headers, true).await?;
-    let _account_guard = account_lock(&me.account).await;
+    let app = connections::for_user(&app, me.user).await?;
+    let _account_guard = account_lock(&format!("{}:{}", app.service_id, me.account)).await;
     app.upstream
         .call(&me.key, "x:AppPassword/set", json!({"destroy":[id]}))
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
-#[utoipa::path(get,path="/api/v1/admin/users",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
-pub(super) async fn users(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
+#[utoipa::path(get,path="/api/v1/admin/users",params(("domainId"=Option<String>,Query,description="Stable local domain ID; omitted uses the migrated default domain")),responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
+pub(super) async fn users(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Json<Value>> {
     operator(&app, &headers, false).await?;
+    let app = connections::for_domain(
+        &app,
+        query
+            .get("domainId")
+            .map(String::as_str)
+            .unwrap_or("default"),
+    )
+    .await?;
     let rows = db::query(db::Statement::AccountUsersSelectPlatformUsers)
+        .bind(&app.domain_id)
         .fetch_all(&app.db)
         .await?;
     Ok(Json(
@@ -392,6 +460,7 @@ pub(super) async fn update_user(
         .fetch_optional(&app.db)
         .await?
         .ok_or(Error(StatusCode::NOT_FOUND, "user_not_found"))?;
+    let app = connections::for_user(&app, id).await?;
     let payload=json!({"account":row.get::<String,_>("stalwart_id"),"enabled":input.enabled,"quota":input.quota_bytes}).to_string();
     let mut tx = db::begin(&app.db).await?;
     db::query(db::Statement::AccountUpdateUserUpdatePlatformUsers)
@@ -428,10 +497,15 @@ pub(super) async fn reconcile_job(app: &App) -> Result<bool> {
     let Some(row) = row else { return Ok(false) };
     let id: String = row.get("id");
     let user: Uuid = row.get("user_id");
+    let app = connections::for_user(app, user).await?;
     let payload: String = row.get("payload");
     let data: Value = serde_json::from_str(&payload).map_err(|_| internal("job_payload"))?;
-    let _account_guard =
-        account_lock(data["account"].as_str().ok_or(internal("job_account"))?).await;
+    let _account_guard = account_lock(&format!(
+        "{}:{}",
+        app.service_id,
+        data["account"].as_str().ok_or(internal("job_account"))?
+    ))
+    .await;
     let enabled = data["enabled"] == true;
     let mut revocation_ready = true;
     if enabled {
@@ -442,7 +516,7 @@ pub(super) async fn reconcile_job(app: &App) -> Result<bool> {
         for session in sessions {
             let sid: String = session.get("id_hash");
             if super::revoke_upstream(
-                app,
+                &app,
                 &sid,
                 data["account"].as_str().ok_or(internal("job_account"))?,
                 &session.get::<Vec<u8>, _>("upstream_key"),
@@ -463,7 +537,7 @@ pub(super) async fn reconcile_job(app: &App) -> Result<bool> {
     let mut update = json!({});
     update[data["account"].as_str().ok_or(internal("job_account"))?] =
         json!({"quotas/maxDiskQuota":data["quota"],"permissions":user_permissions(enabled)});
-    let result = if revocation_ready {
+    let result = if revocation_ready && policy::sync_scope(&app).await.is_ok() {
         app.upstream
             .call(
                 &app.services.provisioning_key,
@@ -505,12 +579,21 @@ pub(super) async fn reconcile_job(app: &App) -> Result<bool> {
     }
     Ok(true)
 }
-#[utoipa::path(get,path="/api/v1/admin/registration",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
+#[utoipa::path(get,path="/api/v1/admin/registration",params(("domainId"=Option<String>,Query,description="Stable local domain ID; omitted uses the migrated default domain")),responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn get_settings(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>> {
     operator(&app, &headers, false).await?;
+    let app = connections::for_domain(
+        &app,
+        query
+            .get("domainId")
+            .map(String::as_str)
+            .unwrap_or("default"),
+    )
+    .await?;
     Ok(Json(
         json!({"policy":registration::settings(&app).await?,"dependenciesReady":readiness::ready(&app).await?,"readiness":readiness::view(&app).await?}),
     ))
@@ -525,13 +608,22 @@ pub(super) struct RegistrationPolicy {
     hourly_recipients: i64,
     daily_recipients: i64,
 }
-#[utoipa::path(patch,path="/api/v1/admin/registration",request_body=RegistrationPolicy,responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
+#[utoipa::path(patch,path="/api/v1/admin/registration",params(("domainId"=Option<String>,Query,description="Stable local domain ID; omitted uses the migrated default domain")),request_body=RegistrationPolicy,responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn put_settings(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
     Json(input): Json<RegistrationPolicy>,
 ) -> Result<StatusCode> {
     let me = operator(&app, &headers, true).await?;
+    let app = connections::for_domain(
+        &app,
+        query
+            .get("domainId")
+            .map(String::as_str)
+            .unwrap_or("default"),
+    )
+    .await?;
     if !(1..=100).contains(&input.maximum_accounts)
         || input.quota_bytes <= 0
         || !(1..=20971520).contains(&input.attachment_bytes)
@@ -550,53 +642,100 @@ pub(super) async fn put_settings(
             "registration_dependencies_missing",
         ));
     }
-    db::query(db::Statement::AccountPutSettingsUpdatePlatformSettings)
-        .bind(serde_json::to_string(&input).map_err(|_| internal("policy"))?)
-        .execute(&app.db)
-        .await?;
+    if app.domain_id != "default" {
+        db::query(db::Statement::ConnectionPolicySet)
+            .bind(serde_json::to_string(&input).map_err(|_| internal("policy"))?)
+            .bind(&app.domain_id)
+            .execute(&app.db)
+            .await?;
+    } else {
+        db::query(db::Statement::AccountPutSettingsUpdatePlatformSettings)
+            .bind(serde_json::to_string(&input).map_err(|_| internal("policy"))?)
+            .execute(&app.db)
+            .await?;
+    }
     audit_event(&app, me.user, "registration.update", me.user, "success").await?;
     Ok(StatusCode::NO_CONTENT)
 }
-#[utoipa::path(get,path="/api/v1/admin/audit",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
-pub(super) async fn audit(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
+#[utoipa::path(get,path="/api/v1/admin/audit",params(("domainId"=Option<String>,Query,description="Stable local domain ID; omitted uses the migrated default domain")),responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
+pub(super) async fn audit(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Json<Value>> {
     operator(&app, &headers, false).await?;
+    let app = connections::for_domain(
+        &app,
+        query
+            .get("domainId")
+            .map(String::as_str)
+            .unwrap_or("default"),
+    )
+    .await?;
     let rows = db::query(db::Statement::AccountAuditSelectAuditEvents)
+        .bind(&app.domain_id)
         .fetch_all(&app.db)
         .await?;
     Ok(Json(
         json!({"items":rows.iter().map(|r|json!({"id":r.get::<Uuid,_>("id"),"actorId":r.get::<Option<Uuid>,_>("actor_id"),"subjectId":r.get::<Option<Uuid>,_>("subject_id"),"action":r.get::<String,_>("action"),"outcome":r.get::<String,_>("outcome"),"createdAt":r.get::<i64,_>("created_at")})).collect::<Vec<_>>()}),
     ))
 }
-#[utoipa::path(get,path="/api/v1/admin/tasks",responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
-pub(super) async fn tasks(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
+#[utoipa::path(get,path="/api/v1/admin/tasks",params(("domainId"=Option<String>,Query,description="Stable local domain ID; omitted uses the migrated default domain")),responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
+pub(super) async fn tasks(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Json<Value>> {
     operator(&app, &headers, false).await?;
+    let app = connections::for_domain(
+        &app,
+        query
+            .get("domainId")
+            .map(String::as_str)
+            .unwrap_or("default"),
+    )
+    .await?;
     let pending: i64 = db::scalar(db::Statement::AccountTasksSelectCredentialRevocations)
+        .bind(&app.domain_id)
         .fetch_one(&app.db)
         .await?;
     let policy_jobs: i64 = db::scalar(db::Statement::AccountTasksSelectCredentialJobs)
+        .bind(&app.domain_id)
         .fetch_one(&app.db)
         .await?;
     let reconciliation: i64 = db::scalar(db::Statement::AccountTasksSelectPlatformUsers)
+        .bind(&app.domain_id)
         .fetch_one(&app.db)
         .await?;
     Ok(Json(
         json!({"accountPolicyJobs":policy_jobs,"credentialRevocations":pending,"registrationReconciliation":reconciliation}),
     ))
 }
-#[utoipa::path(post,path="/api/v1/admin/tasks/retry",responses((status=200,body=Value),(status=401,description="Session required"),(status=403,description="Denied")))]
+#[utoipa::path(post,path="/api/v1/admin/tasks/retry",params(("domainId"=Option<String>,Query,description="Stable local domain ID; omitted uses the migrated default domain")),responses((status=200,body=Value),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn retry_tasks(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>> {
     let me = operator(&app, &headers, true).await?;
+    let app = connections::for_domain(
+        &app,
+        query
+            .get("domainId")
+            .map(String::as_str)
+            .unwrap_or("default"),
+    )
+    .await?;
     let mut tx = db::begin(&app.db).await?;
     let policy = db::query(db::Statement::AccountRetryTasksUpdateCredentialJobs)
         .bind(db::now())
+        .bind(&app.domain_id)
         .execute(&mut *tx)
         .await?
         .rows_affected();
     let credentials = db::query(db::Statement::AccountRetryTasksUpdateCredentialRevocations)
         .bind(db::now())
+        .bind(&app.domain_id)
         .execute(&mut *tx)
         .await?
         .rows_affected();

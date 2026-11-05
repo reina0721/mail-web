@@ -5,6 +5,7 @@ import {PasswordField,SelectField,TextField,CheckboxField} from '@community-go/u
 import {ConfirmDialog} from '@community-go/ui-adapter/overlays';
 import {useSetupAccess} from '../host/use-setup-access';
 import {useInstallationLeave} from '../host/use-installation-leave';
+import {ConnectionsPanel} from './connections-panel';
 import {RegistrationReadiness} from './registration-readiness';
 import {api,errorMessage,ApiError} from '../lib/api';
 import {normalizeStalwart,defaultDocs} from './installation-help';
@@ -66,6 +67,7 @@ export function Installation({initialStatus}:{initialStatus?:Status}){
  </section>
  <section className="installation-card"><h2>3. 自动创建与核对</h2><p>自动创建本安装专用服务身份、验证码发件邮箱、密钥及提交 Hook；不修改 DNS，不自动开放注册。</p><Action variant="secondary" disabled={disabled||!ticket||!spec.domain} onPress={()=>void preflight()}>检查并预览配置</Action>{preview&&<><ul>{preview.map(item=><li key={item}>{item}</li>)}{spec.cloudflareAccount&&<li>本网站专用 Turnstile Widget</li>}</ul><Action disabled={disabled} onPress={()=>void start()}>{job?'重新授权并继续配置':'自动配置'}</Action></>}
  <div className="installation-actions"><Action variant="secondary" disabled={pending||job?.status==='applying'} onPress={()=>void cancel()}>取消授权／停止后续步骤</Action><Action variant="secondary" disabled={running||pending||dirty||!!ticket} onPress={()=>{clearSecrets();setAdvanced(true);}}>高级手工配置</Action></div></section></form>}
+ {loaded&&status?.configured&&!status.needsOperator&&<ConnectionsPanel token={token} origin={spec.publicOrigin} brand={spec.brand}/>}
  {!finished&&loaded&&status?.configured&&<RegistrationReadiness token={token}/>}
  {job&&<section className="installation-card" aria-live="polite"><h2>{finished?'资源已配置':'配置进度'}</h2><p>{steps[job.step]??job.step} · {({running:'处理中',applying:'正在应用配置并检查回调',failed:'失败，已保留进度',interrupted:'服务中断，请重新授权继续',cancelled:'已取消，已创建资源保留',completed:'资源创建完成'} as Record<string,string>)[job.status]??job.status}</p>{job.error&&<p role="alert">{errorMessage(new ApiError(400,job.error))}</p>}<ul>{Object.entries(job.resources).map(([name,id])=><li key={name}>{resourceNames[name]??name}：{id}</li>)}</ul>{finished&&<><p>连接检查通过。{applied?'配置已应用。':'正在应用配置并等待服务重启…'}</p><RegistrationReadiness token={token}/><a href="/">进入邮箱</a>{!job.spec.cloudflareAccount&&<Action variant="secondary" onPress={()=>{setJob(null);setPreview(null);clearSecrets();}}>自动补充 Turnstile</Action>}<Action variant="secondary" onPress={()=>setAdvanced(true)}>查看高级配置</Action></>}</section>}
  <ConfirmDialog triggerLabel="离开配置" title="放弃未保存的输入？" description="管理员凭据不会保存。" impact="离开后需要重新授权。" cancelLabel="继续编辑" confirmLabel="放弃并离开" failureMessage="无法离开，请重试。" isOpen={!!leave.href} onOpenChange={open=>{if(!open)leave.cancel();}} onConfirm={()=>{clearSecrets();setDirty(false);leave.leave();}}/>

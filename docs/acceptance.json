@@ -2,9 +2,9 @@
   "readyForPublicRegistration": false,
   "evidenceScope": {
     "historicalProductionRelease": "v0.1.0-alpha.3",
-    "candidateRelease": "v0.2.0-alpha.10",
-    "candidateStatus": "Published and deployed v0.2.0-alpha.10 to the existing webmail1 installation. Full isolated SMTP/JMAP and identity regression, release installation/restore, type/build/architecture and migration checks passed. Production automatic readiness checks all passed; real owner Turnstile and external-mail receipt remain pending, and registration is still disabled.",
-    "releaseValidation": "https://github.com/reina0721/mail-web/actions/runs/42063599660"
+    "candidateRelease": "v0.3.0-alpha.1",
+    "candidateStatus": "Implementation candidate. Local checks are in progress; dual-real-Stalwart regression, published release validation and production update have not yet completed. Existing production policy and human receipts must be preserved.",
+    "previousReleaseValidation": "https://github.com/reina0721/mail-web/actions/runs/42063599660"
   },
   "verifiedInIsolatedStalwart101": [
     "Real user credentials, mailbox login and operator isolation",

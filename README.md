@@ -8,8 +8,8 @@
 
 - 发布平台：Linux AMD64；单实例 SQLite。
 - 服务器已有 Docker Engine、Compose v2，以及 `curl jq openssl tar sha256sum flock realpath`。安装器只检查这些工具，**不安装系统软件**。
-- 现有 Stalwart 提供可访问的 HTTPS JMAP 来源和已配置的邮件域名。
-- 准备 Stalwart 管理员账号密码或管理员 API 密钥，用于一次性自动配置；如需自动创建 Turnstile，再准备目标 Cloudflare 账号的 Turnstile 写入 Token。
+- 安装时不需要填写 Stalwart、邮箱域名或管理员密码；无邮件连接时仍能启动并通过健康检查。
+- 安装完成后在面板授权已有 Stalwart 的 HTTPS JMAP 服务；需要自动创建 Turnstile 时再提供目标 Cloudflare 账号的 Turnstile 写入 Token。
 - 先选择专用安装目录、容器名称和监听地址。目录通过 `--dir` 传入，项目没有固定安装路径。
 
 服务器下载 GitHub Release 的项目产物，校验 SHA-256，使用 `docker load` 导入镜像，再以 `--pull never --no-build` 启动。**目标服务器不从镜像仓库拉取镜像，也不编译源码。** CI 构建环境可使用官方构建和隔离测试镜像。
@@ -20,7 +20,7 @@
 
 ```sh
 INSTALL_DIR="$HOME/apps/mail-web"
-VERSION=v0.2.0-alpha.10
+VERSION=v0.3.0-alpha.1
 mkdir -p "$INSTALL_DIR"
 curl -fSL "https://raw.githubusercontent.com/reina0721/mail-web/$VERSION/deploy/install.sh" -o "$INSTALL_DIR/install.sh"
 sh "$INSTALL_DIR/install.sh" \
@@ -72,6 +72,16 @@ sh "$INSTALL_DIR/deploy/mail-web.sh" rotate-setup-token
 首次接通后，在面板绑定一个**已有的普通邮箱**作为本部署的运营身份：填写该邮箱、它的密码和外部恢复邮箱。服务器先验证邮箱所有权与普通用户角色，再建立本地运营关联；不修改该账号的 Stalwart 管理员权限或密码。Stalwart 管理员及带系统权限的服务身份不能作为此处的普通运营邮箱。
 
 运营角色仅属于本部署。默认自动向导同时支持绑定已有和新建普通运营邮箱；下文脚本是额外的高级初始化方式，不接管已有地址。
+
+### 多个 Stalwart 与邮箱域名
+
+首个连接完成后，在同一面板的“邮件服务连接”点击“新增连接”，对第二台 Stalwart 临时授权，选域名并自动配置。不需要另建运营邮箱；运行凭据、Hook 和初始化任务按服务分别保存。已有连接可“读取可绑定的其他域名”，追加该服务的域名。品牌、网站来源和 Turnstile 仍属于整个站点。
+
+运营后台通过域名选择器分别管理账号、注册策略与任务。每个域名单独完成本站检查，手动开启注册；一个连接故障不改变其他连接的策略。详见[多服务接入教程](docs/stalwart-setup.md#multiple-services)。
+
+**保留原登录规则：先在 Webmail 登记或绑定，再使用对应服务器的完整邮箱地址和原密码登录。** 添加服务或域名不会自动导入上游用户；没有本地记录的账号仍不能登录。一个会话操作一个邮箱；不提供跨账号合并收件箱。已有账号不能通过改绑域名迁移到另一台服务器。
+
+旧站点升级自动迁移为默认连接和默认域名，保留本地账号、运营身份、会话和计数。更新前 CLI 自动创建一致性快照；迁移或检查失败时不清空重建数据。新安装的默认模板只包含容器、监听等基础设施参数，旧环境变量兼容读取。
 
 ## 4. 公网 HTTP 的安全管理入口
 

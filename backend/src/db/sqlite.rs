@@ -19,7 +19,26 @@ pub async fn connect(path: &Path) -> Result<SqlitePool, Box<dyn std::error::Erro
         .max_connections(4)
         .connect_with(options)
         .await?;
-    sqlx::migrate!("./migrations/sqlite").run(&pool).await?;
+    // Table rebuild migrations run on one startup connection before serving requests.
+    // Foreign-key enforcement is restored even when migration fails.
+    let mut connection = pool.acquire().await?;
+    sqlx::query("PRAGMA foreign_keys=OFF")
+        .execute(&mut *connection)
+        .await?;
+    let migrated = sqlx::migrate!("./migrations/sqlite")
+        .run(&mut *connection)
+        .await;
+    let restored = sqlx::query("PRAGMA foreign_keys=ON")
+        .execute(&mut *connection)
+        .await;
+    migrated?;
+    restored?;
+    let violations = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_all(&mut *connection)
+        .await?;
+    if !violations.is_empty() {
+        return Err("database migration foreign-key check failed".into());
+    }
     Ok(pool)
 }
 pub fn now() -> i64 {
@@ -40,6 +59,81 @@ pub async fn snapshot(pool: &SqlitePool, path: &Path) -> Result<(), Box<dyn std:
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn connection_migration_preserves_legacy_sessions_users_and_counters() {
+        let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("legacy.sqlite");
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(
+                SqliteConnectOptions::new()
+                    .filename(&path)
+                    .create_if_missing(true)
+                    .foreign_keys(true),
+            )
+            .await
+            .unwrap();
+        let mut legacy = sqlx::migrate!("./migrations/sqlite");
+        legacy.migrations = legacy
+            .migrations
+            .iter()
+            .filter(|m| m.version < 8)
+            .cloned()
+            .collect::<Vec<_>>()
+            .into();
+        legacy.run(&pool).await.unwrap();
+        let user = uuid::Uuid::new_v4();
+        sqlx::query("INSERT INTO platform_users(id,email,recovery_email,stalwart_id,status,operator,quota_bytes,hourly_recipients,daily_recipients) VALUES (?,'legacy@example.com','external@example.net','remote','active',1,2048,12,36)").bind(user).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO sessions(id_hash,user_id,csrf_hash,upstream_key,upstream_key_id,expires_at) VALUES ('session',?,'csrf',X'010203','key',9999999999999)").bind(user).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO credential_revocations(session_hash) VALUES ('session')")
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO outbound_reservations(event_id,user_id,recipient_count) VALUES ('event',?,3)").bind(user).execute(&pool).await.unwrap();
+        pool.close().await;
+        let upgraded = connect(&path).await.unwrap();
+        use sqlx::Row;
+        let row = sqlx::query("SELECT * FROM platform_users WHERE id=?")
+            .bind(user)
+            .fetch_one(&upgraded)
+            .await
+            .unwrap();
+        assert_eq!(row.get::<String, _>("service_id"), "default");
+        assert_eq!(row.get::<String, _>("domain_id"), "default");
+        assert!(row.get::<bool, _>("operator"));
+        assert_eq!(row.get::<i64, _>("quota_bytes"), 2048);
+        assert_eq!(row.get::<i64, _>("hourly_recipients"), 12);
+        let key: Vec<u8> =
+            sqlx::query_scalar("SELECT upstream_key FROM sessions WHERE id_hash='session'")
+                .fetch_one(&upgraded)
+                .await
+                .unwrap();
+        assert_eq!(key, vec![1, 2, 3]);
+        let count:i64=sqlx::query_scalar("SELECT recipient_count FROM outbound_reservations WHERE event_id='event' AND service_id='default'").fetch_one(&upgraded).await.unwrap();
+        assert_eq!(count, 3);
+        let fk: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
+            .fetch_one(&upgraded)
+            .await
+            .unwrap();
+        assert_eq!(fk, 1);
+        assert!(
+            sqlx::query("PRAGMA foreign_key_check")
+                .fetch_all(&upgraded)
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        let queued: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM credential_revocations WHERE session_hash='session'",
+        )
+        .fetch_one(&upgraded)
+        .await
+        .unwrap();
+        assert_eq!(queued, 1);
+        upgraded.close().await;
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[tokio::test]
     async fn persistence_foreign_keys_and_snapshot() {
         let root = std::env::temp_dir().join(uuid::Uuid::new_v4().to_string());
@@ -73,6 +167,25 @@ mod tests {
 pub type Pool = SqlitePool;
 #[derive(Clone, Copy)]
 pub enum Statement {
+    ConnectionDomain,
+    ConnectionUserDomain,
+    ConnectionSeedService,
+    ConnectionSeedDomain,
+    ConnectionList,
+    ConnectionServicesList,
+    ConnectionService,
+    ConnectionServiceUsers,
+    ConnectionSave,
+    ConnectionDomainByName,
+    ConnectionDomainInsert,
+    ConnectionPolicyInsert,
+    ConnectionPolicyGet,
+    ConnectionPolicySet,
+    ChallengeDomain,
+    RecoveryDomain,
+    ConnectionServiceDomain,
+    ConnectionPrepare,
+    ReadinessTicketDomain,
     ReadinessGet,
     ReadinessWrite,
     ReadinessLink,
@@ -128,6 +241,7 @@ pub enum Statement {
     RegistrationVerifyUpdateVerificationChallenges,
     RegistrationVerifyUpdateVerificationChallenges2,
     RegistrationAvailabilitySelectPlatformUsers,
+    RegistrationPrincipalConflict,
     RegistrationRegisterSelectVerificationChallenges,
     RegistrationRegisterSelectPlatformUsers,
     RegistrationRegisterSelectPlatformUsers2,
@@ -177,12 +291,57 @@ pub enum Statement {
 impl Statement {
     fn sql(self) -> &'static str {
         match self {
+            Self::ConnectionDomain => {
+                "SELECT d.id,d.service_id,d.name,d.upstream_id,s.origin,s.runtime,s.revision FROM mail_domains d JOIN mail_services s ON s.id=d.service_id WHERE d.id=?"
+            }
+            Self::ConnectionUserDomain => "SELECT domain_id FROM platform_users WHERE id=?",
+            Self::ConnectionSeedService => {
+                "UPDATE mail_services SET origin=? WHERE id='default' AND ?<>''"
+            }
+            Self::ConnectionSeedDomain => {
+                "UPDATE mail_domains SET name=?,upstream_id=? WHERE id='default' AND ?<>''"
+            }
+            Self::ConnectionService => "SELECT * FROM mail_services WHERE id=?",
+            Self::ConnectionServiceUsers => {
+                "SELECT count(*) FROM platform_users WHERE service_id=?"
+            }
+            Self::ConnectionSave => {
+                "INSERT INTO mail_services(id,name,origin,runtime) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,origin=excluded.origin,runtime=excluded.runtime,revision=mail_services.revision+1"
+            }
+            Self::ConnectionDomainByName => "SELECT * FROM mail_domains WHERE name=?",
+            Self::ConnectionDomainInsert => {
+                "INSERT INTO mail_domains(id,service_id,name,upstream_id) VALUES (?,?,?,?)"
+            }
+            Self::ConnectionPolicyInsert => {
+                "INSERT INTO domain_policies(domain_id,value) VALUES (?,?)"
+            }
+            Self::ConnectionPolicyGet => "SELECT value FROM domain_policies WHERE domain_id=?",
+            Self::ChallengeDomain => "SELECT domain_id FROM verification_challenges WHERE id=?",
+            Self::ConnectionPrepare => {
+                "INSERT INTO mail_services(id,name,origin) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name"
+            }
+            Self::ConnectionServiceDomain => {
+                "SELECT id FROM mail_domains WHERE service_id=? ORDER BY name LIMIT 1"
+            }
+            Self::ReadinessTicketDomain => {
+                "SELECT domain_id FROM readiness_interactions WHERE ticket_hash=? AND expires_at>? AND consumed=0"
+            }
+            Self::RecoveryDomain => {
+                "SELECT domain_id FROM platform_users WHERE recovery_email=? AND status='active'"
+            }
+            Self::ConnectionPolicySet => "UPDATE domain_policies SET value=? WHERE domain_id=?",
+            Self::ConnectionServicesList => {
+                "SELECT id,name,origin,runtime,revision FROM mail_services ORDER BY id"
+            }
+            Self::ConnectionList => {
+                "SELECT d.id,d.service_id,d.name,d.upstream_id,s.name AS service_name,s.origin,s.revision,s.runtime FROM mail_domains d JOIN mail_services s ON s.id=d.service_id ORDER BY s.id,d.name"
+            }
             Self::ReadinessGet => "SELECT * FROM registration_readiness WHERE fingerprint=?",
             Self::ReadinessWrite => {
                 "INSERT INTO registration_readiness(fingerprint,report,checked_at,automatic_ok) VALUES (?,?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET report=excluded.report,checked_at=excluded.checked_at,automatic_ok=excluded.automatic_ok"
             }
             Self::ReadinessLink => {
-                "INSERT INTO readiness_interactions(ticket_hash,fingerprint,expires_at) VALUES (?,?,?)"
+                "INSERT INTO readiness_interactions(ticket_hash,fingerprint,expires_at,domain_id) VALUES (?,?,?,?)"
             }
             Self::ReadinessInteraction => {
                 "SELECT * FROM readiness_interactions WHERE ticket_hash=? AND fingerprint=? AND expires_at>? AND consumed=0"
@@ -246,7 +405,7 @@ impl Statement {
                 "UPDATE credential_revocations SET lease_until=? WHERE session_hash=(SELECT session_hash FROM credential_revocations WHERE next_attempt<=? AND lease_until<=? LIMIT 1) RETURNING session_hash"
             }
             Self::MainRevocationsSelectSessions => {
-                "SELECT s.upstream_key,s.upstream_key_id,u.stalwart_id FROM sessions s JOIN platform_users u ON u.id=s.user_id WHERE s.id_hash=?"
+                "SELECT s.upstream_key,s.upstream_key_id,u.stalwart_id,u.id AS user_id FROM sessions s JOIN platform_users u ON u.id=s.user_id WHERE s.id_hash=?"
             }
             Self::MainRevocationsUpdateCredentialRevocations2 => {
                 "UPDATE credential_revocations SET attempts=attempts+1,lease_until=0,next_attempt=?,last_error='upstream_unavailable' WHERE session_hash=? AND lease_until=?"
@@ -285,7 +444,7 @@ impl Statement {
                 "INSERT OR IGNORE INTO credential_revocations(session_hash) SELECT id_hash FROM sessions WHERE user_id=? AND id_hash<>? AND revoked_at IS NOT NULL"
             }
             Self::AccountUsersSelectPlatformUsers => {
-                "SELECT id,email,status,operator,quota_bytes,hourly_recipients,daily_recipients FROM platform_users ORDER BY created_at DESC LIMIT 200"
+                "SELECT id,email,status,operator,quota_bytes,hourly_recipients,daily_recipients FROM platform_users WHERE domain_id=? ORDER BY created_at DESC LIMIT 200"
             }
             Self::AccountUpdateUserUpdatePlatformUsers => {
                 "UPDATE platform_users SET status=CASE WHEN ? THEN status ELSE 'disabled' END,quota_bytes=?,hourly_recipients=?,daily_recipients=? WHERE id=?"
@@ -318,23 +477,28 @@ impl Statement {
                 "UPDATE platform_settings SET value=? WHERE key='registration'"
             }
             Self::AccountTasksSelectCredentialRevocations => {
-                "SELECT count(*) FROM credential_revocations"
+                "SELECT count(*) FROM credential_revocations r JOIN sessions s ON s.id_hash=r.session_hash JOIN platform_users u ON u.id=s.user_id WHERE u.domain_id=?"
             }
-            Self::AccountTasksSelectCredentialJobs => "SELECT count(*) FROM credential_jobs",
+            Self::AccountTasksSelectCredentialJobs => {
+                "SELECT count(*) FROM credential_jobs j JOIN platform_users u ON u.id=j.user_id WHERE u.domain_id=?"
+            }
             Self::RegistrationSettingsSelectPlatformSettings => {
                 "SELECT value FROM platform_settings WHERE key='registration'"
             }
             Self::RegistrationChallengeInsertVerificationChallenges => {
-                "INSERT INTO verification_challenges(id,email,purpose,code_hash,expires_at) VALUES (?,?,?,?,?)"
+                "INSERT INTO verification_challenges(id,email,purpose,code_hash,expires_at,domain_id) VALUES (?,?,?,?,?,?)"
             }
             Self::RegistrationVerifyUpdateVerificationChallenges => {
-                "UPDATE verification_challenges SET attempts=attempts+1 WHERE id=? AND expires_at>? AND attempts<5 AND consumed_at IS NULL AND verified_at IS NULL RETURNING code_hash"
+                "UPDATE verification_challenges SET attempts=attempts+1 WHERE id=? AND expires_at>? AND attempts<5 AND consumed_at IS NULL AND verified_at IS NULL RETURNING code_hash,domain_id"
             }
             Self::RegistrationVerifyUpdateVerificationChallenges2 => {
                 "UPDATE verification_challenges SET verified_at=?,claim_hash=? WHERE id=? AND verified_at IS NULL AND consumed_at IS NULL"
             }
             Self::RegistrationAvailabilitySelectPlatformUsers => {
                 "SELECT count(*) FROM platform_users WHERE email=?"
+            }
+            Self::RegistrationPrincipalConflict => {
+                "SELECT count(*) FROM platform_users WHERE service_id=? AND email<>? AND (lower(substr(email,1,instr(email,'@')-1))=? OR lower(stalwart_id)=?)"
             }
             Self::RegistrationRegisterSelectVerificationChallenges => {
                 "SELECT email FROM verification_challenges WHERE id=? AND purpose='registration' AND claim_hash=? AND verified_at IS NOT NULL AND expires_at>?"
@@ -343,10 +507,10 @@ impl Statement {
                 "SELECT id,email,status FROM platform_users WHERE challenge_id=? OR (email=? AND recovery_email=? AND status='provisioning')"
             }
             Self::RegistrationRegisterSelectPlatformUsers2 => {
-                "SELECT count(*) FROM platform_users WHERE operator=0"
+                "SELECT count(*) FROM platform_users WHERE operator=0 AND domain_id=?"
             }
             Self::RegistrationRegisterInsertPlatformUsers => {
-                "INSERT INTO platform_users(id,email,recovery_email,status,challenge_id,hourly_recipients,daily_recipients,quota_bytes) VALUES (?,?,?,'provisioning',?,?,?,?)"
+                "INSERT INTO platform_users(id,email,recovery_email,status,challenge_id,hourly_recipients,daily_recipients,quota_bytes,service_id,domain_id) VALUES (?,?,?,'provisioning',?,?,?,?,?,?)"
             }
             Self::RegistrationRegisterUpdatePlatformUsers => {
                 "UPDATE platform_users SET provisioning_lease=?,challenge_id=? WHERE id=? AND provisioning_lease<=?"
@@ -367,13 +531,13 @@ impl Statement {
                 "UPDATE verification_challenges SET consumed_at=? WHERE id=? AND purpose='recovery' AND claim_hash=? AND verified_at IS NOT NULL AND consumed_at IS NULL AND expires_at>? RETURNING email"
             }
             Self::PolicySyncScopeSelectPlatformUsers => {
-                "SELECT email,stalwart_id FROM platform_users WHERE stalwart_id IS NOT NULL"
+                "SELECT email,stalwart_id FROM platform_users WHERE stalwart_id IS NOT NULL AND service_id=?"
             }
             Self::PolicyRateInsertRequestLimits => {
                 "INSERT INTO request_limits(bucket,window_start,count) VALUES (?, ?, 1) ON CONFLICT(bucket) DO UPDATE SET count=CASE WHEN window_start<=? THEN 1 ELSE count+1 END,window_start=CASE WHEN window_start<=? THEN excluded.window_start ELSE window_start END RETURNING count"
             }
             Self::PolicyReserveSelectPlatformUsers => {
-                "SELECT id,status,hourly_recipients,daily_recipients FROM platform_users WHERE email=? OR stalwart_id=? OR email=?"
+                "SELECT id,status,hourly_recipients,daily_recipients FROM platform_users WHERE service_id=? AND (email=? OR lower(stalwart_id)=? OR lower(substr(email,1,instr(email,'@')-1))=?)"
             }
             Self::PolicyReserveSelectOutboundReservations => {
                 "SELECT COALESCE(sum(recipient_count),0) FROM outbound_reservations WHERE user_id=? AND created_at>?"
@@ -382,7 +546,7 @@ impl Statement {
                 "SELECT COALESCE(sum(recipient_count),0) FROM outbound_reservations WHERE user_id=? AND created_at>?"
             }
             Self::PolicyReserveInsertOutboundReservations => {
-                "INSERT INTO outbound_reservations(event_id,user_id,recipient_count,created_at) VALUES (?,?,?,?)"
+                "INSERT INTO outbound_reservations(event_id,user_id,recipient_count,created_at,service_id) VALUES (?,?,?,?,?)"
             }
             Self::MailDraftSelectUploadOwnership => {
                 "SELECT size,type FROM upload_ownership WHERE user_id=? AND blob_id=?"
@@ -437,22 +601,22 @@ impl Statement {
                 "DELETE FROM credential_revocations WHERE session_hash=? AND lease_until=?"
             }
             Self::AccountAuditEventInsertAuditEvents => {
-                "INSERT INTO audit_events(id,actor_id,action,subject_id,outcome) VALUES (?,?,?,?,?)"
+                "INSERT INTO audit_events(id,actor_id,action,subject_id,outcome,domain_id) VALUES (?,?,?,?,?,?)"
             }
             Self::AccountUpdateUserSelectPlatformUsers => {
                 "SELECT stalwart_id FROM platform_users WHERE id=? AND status IN ('active','disabled')"
             }
             Self::AccountAuditSelectAuditEvents => {
-                "SELECT id,actor_id,subject_id,action,outcome,created_at FROM audit_events ORDER BY created_at DESC LIMIT 200"
+                "SELECT id,actor_id,subject_id,action,outcome,created_at FROM audit_events WHERE domain_id=? ORDER BY created_at DESC LIMIT 200"
             }
             Self::AccountTasksSelectPlatformUsers => {
-                "SELECT count(*) FROM platform_users WHERE status IN ('provisioning','reconcile')"
+                "SELECT count(*) FROM platform_users WHERE status IN ('provisioning','reconcile') AND domain_id=?"
             }
             Self::AccountRetryTasksUpdateCredentialJobs => {
-                "UPDATE credential_jobs SET next_attempt=0 WHERE attempts>0 AND lease_until<=?"
+                "UPDATE credential_jobs SET next_attempt=0 WHERE attempts>0 AND lease_until<=? AND user_id IN (SELECT id FROM platform_users WHERE domain_id=?)"
             }
             Self::AccountRetryTasksUpdateCredentialRevocations => {
-                "UPDATE credential_revocations SET next_attempt=0 WHERE attempts>0 AND lease_until<=?"
+                "UPDATE credential_revocations SET next_attempt=0 WHERE attempts>0 AND lease_until<=? AND session_hash IN (SELECT s.id_hash FROM sessions s JOIN platform_users u ON u.id=s.user_id WHERE u.domain_id=?)"
             }
             Self::RegistrationRecoverSelectPlatformUsers => {
                 "SELECT id,stalwart_id FROM platform_users WHERE recovery_email=? AND status='active'"

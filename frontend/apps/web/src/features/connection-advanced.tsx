@@ -1,0 +1,20 @@
+'use client';
+import {useEffect,useState} from 'react';
+import {Action} from '@community-go/ui-adapter/action';
+import {TextField,PasswordField} from '@community-go/ui-adapter/form-field';
+import {api,errorMessage} from '../lib/api';
+
+type Fields={notification_account:string;notification_email:string;hook_id:string;provisioning_key:string;notification_key:string;hook_secret:string};
+type Metadata={settings:Pick<Fields,'notification_account'|'notification_email'|'hook_id'>;provisioningKeySet:boolean;notificationKeySet:boolean;hookSecretSet:boolean};
+const empty:Fields={notification_account:'',notification_email:'',hook_id:'',provisioning_key:'',notification_key:'',hook_secret:''};
+export function ConnectionAdvanced({service,domains,token,onSaved,onDirtyChange}:{service:{id:string;name:string;origin:string};domains:string[];token:string;onSaved:()=>Promise<unknown>;onDirtyChange:(dirty:boolean)=>void}){
+ const[metadata,setMetadata]=useState<Metadata|null>(null),[fields,setFields]=useState(empty),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[revision,setRevision]=useState(0);
+ const headers=()=>token?{Authorization:'Bearer '+token}:undefined;
+ const dirty=!!metadata&&JSON.stringify(fields)!==JSON.stringify({...empty,...metadata.settings});
+ useEffect(()=>{const abort=new AbortController();setMetadata(null);setFields(empty);setNotice('');void api<Metadata>('/installation/connections/'+encodeURIComponent(service.id),{headers:headers(),signal:abort.signal}).then(result=>{if(abort.signal.aborted)return;setMetadata(result);setFields({...empty,...result.settings});}).catch(error=>{if(!abort.signal.aborted)setNotice(errorMessage(error));});return()=>abort.abort();},[service.id,token,revision]);
+ useEffect(()=>{onDirtyChange(dirty);return()=>onDirtyChange(false);},[dirty,onDirtyChange]);
+ useEffect(()=>{if(!dirty)return;const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty]);
+ const change=(key:keyof Fields,value:string)=>setFields(previous=>({...previous,[key]:value}));
+ async function save(){setBusy(true);setNotice('');try{await api('/installation/connections',{method:'POST',headers:headers(),body:JSON.stringify({id:service.id,name:service.name,origin:service.origin,settings:fields,domains})});setFields(value=>({...value,provisioning_key:'',notification_key:'',hook_secret:''}));await onSaved();setRevision(value=>value+1);}catch(error){setNotice(errorMessage(error));}finally{setBusy(false);}}
+ return <section className="connection-advanced"><h3>此连接的高级运行配置</h3><p className="muted">用于排错或更换专用运行密钥。已保存的密钥不回显，留空则保留。保存后重新检查各域名的注册条件。</p>{!metadata?<><p role="status">{notice||'正在读取现有配置…'}</p><Action variant="quiet" onPress={()=>setRevision(value=>value+1)}>重新读取</Action></>:<><div className="installation-grid">{([{key:'notification_account',label:'验证码发件账号 ID'},{key:'notification_email',label:'验证码发件邮箱'},{key:'hook_id',label:'本安装专用 Hook ID'}] as const).map(field=><TextField key={field.key} label={field.label} value={fields[field.key]} disabled={busy} onChange={event=>change(field.key,event.target.value)}/>)}{([{key:'provisioning_key',label:'专用目录服务 API 密钥',saved:metadata.provisioningKeySet},{key:'notification_key',label:'验证码发件 API 密钥',saved:metadata.notificationKeySet},{key:'hook_secret',label:'Hook 共享密钥',saved:metadata.hookSecretSet}] as const).map(field=><div key={field.key}><PasswordField label={field.label} purpose="new" showLabel="显示" hideLabel="隐藏" value={fields[field.key]} disabled={busy} onChange={event=>change(field.key,event.target.value)}/><p className="muted">{field.saved?'已有加密保存值，留空保留':'尚未配置'}</p></div>)}</div><div className="installation-actions"><Action disabled={busy||!dirty} loading={busy} onPress={()=>void save()}>保存此连接</Action><Action variant="secondary" disabled={busy||!dirty} onPress={()=>{setFields({...empty,...metadata.settings});setNotice('');}}>取消更改</Action></div>{dirty&&<p className="muted">有未保存的更改；关闭高级配置或切换连接会清除这些输入。</p>}{notice&&<p role="alert">{notice}</p>}</>}</section>;
+}

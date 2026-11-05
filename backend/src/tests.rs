@@ -13,6 +13,10 @@ async fn session_isolation_csrf_revocation_and_operator_boundary() {
         sqlx::query("INSERT INTO sessions(id_hash,user_id,csrf_hash,upstream_key,upstream_key_id,expires_at) VALUES (?,?,?,?,?,?)").bind(hash(sid)).bind(user).bind(hash("csrf")).bind(vault.seal(name.as_bytes()).unwrap()).bind(name).bind(db::now()+3600000).execute(&pool).await.unwrap();
     }
     let app = Arc::new(App {
+        root: None,
+        revision: 0,
+        service_id: "default".into(),
+        domain_id: "default".into(),
         db: pool,
         upstream: Stalwart {
             http: reqwest::Client::new(),

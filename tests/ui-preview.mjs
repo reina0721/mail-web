@@ -19,6 +19,10 @@ const setupDocs='https://github.com/reina0721/mail-web/blob/main/docs/stalwart-s
 let setup={brand:'Mail Web',domain:'example.com',publicOrigin:'https://webmail.example.com',stalwartUrl:'https://mail.example.com',domainId:'preview-domain',notificationAccount:'',notificationEmail:'',hookId:'',turnstileSiteKey:''};
 const log=[];
 let initializationJob=null,initializationGrant='',initializationPolls=0,initializationBase='';
+const secondaryId='e48cbb48-75a8-42de-bcd5-c5c1272f0def',secondaryDomain='4bc36eaf-cd4a-4bf2-b170-32bec85be85e';
+const services=[{id:'default',name:'默认邮件服务',origin:'https://mail.example.com',configured:true},{id:secondaryId,name:'团队邮件服务',origin:'https://mail.team.example',configured:true}];
+const bindings=[{id:'default',serviceId:'default',name:'example.com',upstreamId:'preview-domain',serviceName:'默认邮件服务'},{id:secondaryDomain,serviceId:secondaryId,name:'team.example',upstreamId:'preview-team',serviceName:'团队邮件服务'}];
+const policies=new Map([['default',policy],[secondaryDomain,{...policy}]]),connectionJobs=new Map();
 function json(res,data,status=200){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));}
 async function body(req){let s='';for await(const c of req)s+=c;return s?JSON.parse(s):{};}
 http.createServer(async(req,res)=>{try{
@@ -27,8 +31,20 @@ http.createServer(async(req,res)=>{try{
  if(p==='/__preview/log')return json(res,log);
  if(p.startsWith('/api/v1/')){
   const key=p.slice(7),input=req.method==='GET'?{}:await body(req);log.push({method:req.method,path:key,input:Object.fromEntries(Object.entries(input).map(([k,v])=>[k,/password|secret|token|apiKey|ticket|provisioningKey|notificationKey/i.test(k)?'[redacted]':v]))});
+  const domainId=url.searchParams.get('domainId')??'default',serviceId=url.searchParams.get('serviceId')??'default',domainPolicy=policies.get(domainId)??policy;
+  if(key==='/installation/connections'){
+   if(req.method==='POST'){const source=services.find(s=>s.id===input.id);if(source)Object.assign(source,{name:input.name});for(const name of input.domains??[]){if(!bindings.some(d=>d.name===name)){const id='preview-'+bindings.length;bindings.push({id,serviceId:input.id,name,upstreamId:'preview-remote',serviceName:input.name});policies.set(id,{...policy,enabled:false});}}}
+   return json(res,{services,domains:bindings});
+  }
+  if(key==='/installation/connections/prepare'){services.push({id:input.id,name:input.name,origin:input.origin,configured:false});return json(res,{serviceId:input.id});}
+  if(key.startsWith('/installation/connections/'))return json(res,{settings:{notification_account:'preview-sender',notification_email:'verification@team.example',hook_id:'preview-hook'},provisioningKeySet:true,notificationKeySet:true,hookSecretSet:true});
+  if(key==='/installation/initialize/job'&&serviceId!=='default'){
+   if(req.method==='POST'){connectionJobs.set(serviceId,{status:'completed',step:'completed',spec:input.spec,resources:{domain:'preview-remote',directory:'preview-service',directoryKey:'preview-key',notification:'preview-sender',notificationKey:'preview-key',hook:'preview-hook'}});const service=services.find(s=>s.id===serviceId);service.configured=true;if(!bindings.some(d=>d.name===input.spec.domain)){const id='preview-'+bindings.length;bindings.push({id,serviceId,name:input.spec.domain,upstreamId:'preview-remote',serviceName:service.name});policies.set(id,{...policy,enabled:false});}}
+   return json(res,{job:connectionJobs.get(serviceId)??null});
+  }
   if(key==='/installation')return json(res,{configured:mode.setupConfigured,needsOperator:mode.setupNeedsOperator,brand:setup.brand,domain:mode.setupConfigured?setup.domain:'',version:'preview',instanceId:'isolated-preview-'+mode.setupEpoch});
-  if(key==='/registration/policy')return json(res,policy);
+  if(key==='/registration/domains')return json(res,{items:bindings.map(d=>({id:d.id,domain:d.name,enabled:policies.get(d.id)?.enabled,dependenciesReady:!!mode.readinessHuman}))});
+  if(key==='/registration/policy')return json(res,{...domainPolicy,brand:setup.brand,siteKey:'',domain:bindings.find(d=>d.id===domainId)?.name??'example.com'});
   if(mode.expired)return json(res,{code:'unauthorized'},401);
   if(mode.fail&&key.startsWith(mode.fail))return json(res,{code:'unavailable'},503);
   if(key==='/installation/readiness'){
@@ -36,7 +52,7 @@ http.createServer(async(req,res)=>{try{
    const labels={configuration:'运行凭据和网站来源',directory:'目录服务与账号管理权限',domain:'已配置的邮箱域名',sender:'发件权限与真实发件身份',hook:'专用 Hook 配置与账号作用范围',callback:'网站回调认证（不代表协议实测）',turnstile:'Turnstile 配置（真实验证在下一步）'};
    const items=Object.entries(labels).map(([id,label])=>({id,label,status:mode.readinessFailure===id?'failed':'passed',reason:mode.readinessFailure===id?'callback_unreachable':null}));
    const ready=!mode.readinessFailure&&!!mode.readinessHuman;
-   return json(res,{ready,items,requestedEnabled:policy.enabled,effectiveEnabled:policy.enabled&&ready,checkedAt:Date.now(),humanVerifiedAt:mode.readinessHuman?Date.now():0,releaseVersion:'0.2.0-alpha.10',protocolScope:'示例预览：未执行生产停机或协议压力测试'});
+   return json(res,{ready,items,serviceId:bindings.find(d=>d.id===domainId)?.serviceId??'default',domainId,requestedEnabled:domainPolicy.enabled,effectiveEnabled:domainPolicy.enabled&&ready,checkedAt:Date.now(),humanVerifiedAt:mode.readinessHuman?Date.now():0,releaseVersion:'0.3.0-alpha.1',protocolScope:'示例预览：未执行真实服务验收'});
   }
   if(key==='/installation/readiness/link')return json(res,{url:setup.publicOrigin+'/setup/check/#check=isolated-preview-only',expiresInSeconds:600});
   if(key==='/installation/initialize/authorize'){
@@ -70,7 +86,12 @@ http.createServer(async(req,res)=>{try{
   }
   if(key==='/auth/session')return json(res,{id:'operator',email:'operator@example.com',operator:mode.operator});
   if(key==='/auth/logout'){mode.expired=true;return json(res,{});}
-  if(key==='/account')return json(res,{preferences:{theme:mode.theme}});
+  if(key==='/account'){if(req.method==='PATCH'){mode.profileName=input.display_name;mode.theme=input.theme;}return json(res,{email:'operator@example.com',displayName:mode.profileName??'运营团队',quotaBytes:1073741824,usedBytes:104857600,preferences:{theme:mode.theme}});}
+  if(key==='/account/usage')return json(res,{usedBytes:104857600,quotaBytes:1073741824});
+  if(key==='/account/capabilities')return json(res,{changePassword:true,appPasswords:true});
+  if(key==='/auth/sessions')return json(res,{items:[{id:'preview-current',current:true,lastSeen:Date.now()},{id:'preview-other',current:false,lastSeen:Date.now()-60000}]});
+  if(key.startsWith('/auth/sessions/'))return json(res,{});
+  if(key==='/account/app-passwords')return json(res,req.method==='POST'?{created:{credential:{secret:'preview-only-not-a-real-password'}}}:{list:[]});
   if(key==='/events'){res.writeHead(200,{'Content-Type':'text/event-stream'});res.write(': preview\n\n');return;}
   if(key==='/mailboxes'&&req.method==='GET')return json(res,{list:boxes});
   if(key==='/mailboxes'){boxes.push({id:'custom-'+boxes.length,name:input.name,role:null,unreadEmails:0});return json(res,{});}
@@ -84,7 +105,7 @@ http.createServer(async(req,res)=>{try{
   if(key.startsWith('/admin/')&&!mode.operator)return json(res,{code:'forbidden'},403);
   if(key==='/admin/users')return json(res,{items:users});
   if(key.startsWith('/admin/users/')){Object.assign(users.find(u=>u.id===key.split('/').pop()),{quotaBytes:input.quota_bytes,hourlyRecipients:input.hourly_recipients,dailyRecipients:input.daily_recipients,status:input.enabled?'active':'disabled'});return json(res,{});}
-  if(key==='/admin/registration'){if(req.method==='PATCH')Object.assign(policy,input);return json(res,{policy,dependenciesReady:!mode.readinessFailure&&!!mode.readinessHuman});}
+  if(key==='/admin/registration'){if(req.method==='PATCH')Object.assign(domainPolicy,input);return json(res,{policy:domainPolicy,dependenciesReady:!mode.readinessFailure&&!!mode.readinessHuman});}
   if(key==='/admin/tasks')return json(res,{accountPolicyJobs:0,credentialRevocations:0,registrationReconciliation:0});
   if(key==='/admin/tasks/retry')return json(res,{queued:0});
   if(key==='/admin/audit')return json(res,{items:audit});

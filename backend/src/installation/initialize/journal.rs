@@ -60,16 +60,20 @@ impl Job {
         self.secrets.get(key).cloned().unwrap_or_default()
     }
 }
-fn path() -> PathBuf {
-    config_path().with_file_name("initialization.enc")
+fn path(app: &App) -> PathBuf {
+    config_path().with_file_name(if app.service_id == "default" {
+        "initialization.enc".into()
+    } else {
+        format!("initialization-{}.enc", app.service_id)
+    })
 }
 pub(super) fn read(app: &App) -> Result<Option<Job>> {
-    if !path().exists() {
+    if !path(app).exists() {
         return Ok(None);
     }
     let bytes = zeroize::Zeroizing::new(
         app.vault
-            .open(&std::fs::read(path()).map_err(|_| internal("initialization_read"))?)
+            .open(&std::fs::read(path(app)).map_err(|_| internal("initialization_read"))?)
             .map_err(|_| internal("initialization_decrypt"))?,
     );
     Ok(Some(
@@ -84,7 +88,7 @@ pub(super) fn write(app: &App, job: &Job) -> Result<()> {
         .vault
         .seal(&data)
         .map_err(|_| internal("initialization_encrypt"))?;
-    let path = path();
+    let path = path(app);
     let parent = path
         .parent()
         .ok_or_else(|| internal("initialization_path"))?;
