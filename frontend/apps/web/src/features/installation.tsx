@@ -3,7 +3,7 @@ import {useEffect,useState,type ReactNode} from 'react';
 import {Action} from '@community-go/ui-adapter/action';
 import {api,errorMessage} from '../lib/api';
 import type {components} from '../lib/generated-api';
-import {Installation} from './installation-editor';
+import {Installation} from './installation-automatic';
 export {Installation};
 type Status=components['schemas']['InstallationStatus'];
 export function InstallationGate({children,onSite}:{children:ReactNode;onSite:(site:{brand:string;domain:string})=>void}){

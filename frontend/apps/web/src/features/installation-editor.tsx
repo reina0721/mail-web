@@ -17,8 +17,9 @@ type View=components['schemas']['ConfigurationView']&{missingRequirements?:strin
 const empty:Settings={brand:'Mail Web',domain:'',publicOrigin:'',stalwartUrl:'',domainId:'',notificationAccount:'',notificationEmail:'',hookId:'',turnstileSiteKey:''};
 const sectionText:Record<string,string>={ready:'读取成功',permission_denied:'密钥权限不足，请按教程检查对应读取权限',request_failed:'请求失败，可重新读取',select_domain:'先选择邮箱域名'};
 
-export function Installation({initialStatus}:{initialStatus?:Status}){
+export function Installation({initialStatus,initialToken}:{initialStatus?:Status;initialToken?:string}){
  const{token,setToken,origin}=useSetupAccess(),setSite=useSiteSettings(s=>s.setSite);
+ useEffect(()=>{if(initialToken)setToken(initialToken);},[initialToken]);
  const[status,setStatus]=useState<Status|null>(initialStatus??null),[settings,setSettings]=useState<Settings>(empty),[baseline,setBaseline]=useState<Settings>(empty),[view,setView]=useState<View|null>(null);
  const[loaded,setLoaded]=useState(false),[pending,setPending]=useState(false),[waiting,setWaiting]=useState(false),[failed,setFailed]=useState(false),[notice,setNotice]=useState(''),[dirty,setDirty]=useState(false);
  const[stage,setStage]=useState<'connection'|'operator'>(initialStatus?.configured&&initialStatus.needsOperator?'operator':'connection');

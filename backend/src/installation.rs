@@ -2,6 +2,7 @@ use super::*;
 use std::{io::Write, path::PathBuf};
 use subtle::ConstantTimeEq;
 pub(super) mod discovery;
+pub(super) mod initialize;
 
 pub static RELOAD: tokio::sync::Notify = tokio::sync::Notify::const_new();
 static INSTANCE_ID: std::sync::LazyLock<String> = std::sync::LazyLock::new(token);
@@ -120,6 +121,7 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/installation/config", get(read_config).put(save_config))
         .route("/installation/operator", post(enroll_operator))
         .route("/installation/discover", post(discovery::discover))
+        .merge(initialize::routes())
 }
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -187,7 +189,7 @@ async fn authorize(app: &App, headers: &HeaderMap, write: bool) -> Result<()> {
     }
     Ok(())
 }
-#[derive(Serialize, Deserialize, ToSchema)]
+#[derive(Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct ConfigurationInput {
     pub brand: String,
