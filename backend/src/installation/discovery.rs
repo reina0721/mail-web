@@ -44,7 +44,6 @@ pub(super) fn missing(s: &config::Services) -> Vec<String> {
         (s.turnstile_secret.is_empty(), "Turnstile Secret"),
         (s.hook_id.is_empty(), "本部署专用 MTA Hook"),
         (s.hook_secret.is_empty(), "Hook 共享密钥"),
-        (!s.policy_verified, "SMTP／JMAP 提交协议验收声明"),
     ]
     .into_iter()
     .filter(|(absent, _)| *absent)

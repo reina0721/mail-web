@@ -43,7 +43,7 @@ pub(super) async fn public_policy(
         attachment_bytes: p["attachmentBytes"].as_i64().unwrap_or(20971520),
     }))
 }
-fn address(input: &str) -> bool {
+pub(crate) fn address(input: &str) -> bool {
     input.len() <= 254
         && !input.chars().any(char::is_whitespace)
         && input.split('@').count() == 2

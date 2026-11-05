@@ -10,6 +10,7 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/readiness/session", post(interaction))
         .route("/readiness/send", post(readiness_send))
         .route("/readiness/verify", post(readiness_verify))
+        .layer(axum::extract::DefaultBodyLimit::max(16384))
 }
 fn fingerprint(app: &App) -> String {
     let mut services = app.services.clone();
@@ -462,6 +463,9 @@ pub(crate) struct Input {
     code: String,
 }
 async fn session(app: &App, input: &Input) -> Result<sqlx::sqlite::SqliteRow> {
+    if input.ticket.len() != 64 || !input.ticket.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(Error(StatusCode::UNAUTHORIZED, "readiness_link_expired"));
+    }
     if !current(app) {
         return Err(Error(
             StatusCode::CONFLICT,
@@ -497,7 +501,7 @@ pub(crate) async fn readiness_send(
     same_origin(&app, &headers)?;
     let _ = session(&app, &input).await?;
     let email = input.email.trim().to_lowercase();
-    if !email.contains('@')
+    if !registration::address(&email)
         || email.len() > 254
         || email.chars().any(char::is_whitespace)
         || app.services.is_local_address(&email)

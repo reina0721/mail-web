@@ -36,6 +36,11 @@ def verified_claim(email, purpose):
         policy["enabled"] = True
         db.execute("UPDATE platform_settings SET value=? WHERE key='registration'", (json.dumps(policy),))
     start()
+    # Human inputs are fixture-seeded, but automatic deployment checks run for
+    # real after restart and after the preceding suite changed managed accounts.
+    setup_token = (ROOT / "secrets/setup.key").read_text().strip()
+    status, readiness, _ = request(BASE + "/api/v1/installation/readiness", "POST", None, {"Origin": "http://mail-web:8080", "Authorization": "Bearer " + setup_token})
+    assert status == 200 and readiness["ready"], (status, readiness)
     status, result, _ = request(BASE + "/api/v1/registration/verify", "POST", {"challenge_id": str(challenge), "code": code}, {"Origin": "http://mail-web:8080"})
     assert status == 200, ("verify", status, result)
     return {"challenge_id": str(challenge), "verification_token": result["verificationToken"]}
