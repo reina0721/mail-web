@@ -307,7 +307,14 @@ pub(super) async fn availability(
         .bind(app.services.address(name))
         .fetch_one(&app.db)
         .await?;
-    Ok(Json(json!({"available":count==0})))
+    let conflicts: i64 = db::scalar(db::Statement::RegistrationPrincipalConflict)
+        .bind(&app.service_id)
+        .bind(app.services.address(name))
+        .bind(name.to_lowercase())
+        .bind(name.to_lowercase())
+        .fetch_one(&app.db)
+        .await?;
+    Ok(Json(json!({"available":count==0&&conflicts==0})))
 }
 #[derive(Deserialize, ToSchema)]
 pub(super) struct Register {

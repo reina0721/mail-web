@@ -537,7 +537,7 @@ impl Statement {
                 "INSERT INTO request_limits(bucket,window_start,count) VALUES (?, ?, 1) ON CONFLICT(bucket) DO UPDATE SET count=CASE WHEN window_start<=? THEN 1 ELSE count+1 END,window_start=CASE WHEN window_start<=? THEN excluded.window_start ELSE window_start END RETURNING count"
             }
             Self::PolicyReserveSelectPlatformUsers => {
-                "SELECT id,status,hourly_recipients,daily_recipients FROM platform_users WHERE service_id=? AND (email=? OR lower(stalwart_id)=? OR lower(substr(email,1,instr(email,'@')-1))=?)"
+                "SELECT id,status,hourly_recipients,daily_recipients,domain_id FROM platform_users WHERE service_id=? AND (email=? OR lower(stalwart_id)=? OR lower(substr(email,1,instr(email,'@')-1))=?)"
             }
             Self::PolicyReserveSelectOutboundReservations => {
                 "SELECT COALESCE(sum(recipient_count),0) FROM outbound_reservations WHERE user_id=? AND created_at>?"

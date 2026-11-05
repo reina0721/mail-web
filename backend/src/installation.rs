@@ -333,6 +333,18 @@ pub(super) async fn save_config(
     if provisioning_key.is_empty() {
         return Err(Error(StatusCode::BAD_REQUEST, "provisioning_key_required"));
     }
+    if changed_server
+        && db::scalar::<i64>(db::Statement::ConnectionServiceUsers)
+            .bind("default")
+            .fetch_one(&app.db)
+            .await?
+            > 0
+    {
+        return Err(Error(
+            StatusCode::CONFLICT,
+            "initialization_server_migration_required",
+        ));
+    }
     let upstream = Stalwart {
         http: app.upstream.http.clone(),
         base: base.origin().ascii_serialization(),

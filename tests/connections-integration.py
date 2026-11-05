@@ -216,7 +216,7 @@ try:
         attachment = ("Private attachment from " + tag).encode()
         multipart = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="proof.txt"\r\nContent-Type: text/plain\r\n\r\n'.encode() + attachment + f"\r\n--{boundary}--\r\n".encode())
         blob = api("/attachments", "POST", multipart, {**actor, "Content-Type": "multipart/form-data; boundary=" + boundary})[0]
-        draft["attachments"] = [blob]
+        draft["attachments"] = [{"blob_id":blob["blobId"],"name":"proof.txt","type":"text/plain"}]
         message = api("/drafts", "POST", draft, actor)[0]["id"]
         saved.append(message)
         detail = api("/messages/" + message, cookie=actor)[0]
@@ -231,6 +231,10 @@ try:
     profile_b = api("/account", cookie=actor_b)[0]
     assert profile_b["displayName"] == "Source B" and profile_b["preferences"]["theme"] == "dark"
     assert api("/account", cookie=actor_a)[0]["displayName"] != "Source B"
+    api("/installation/config", "PUT", {"brand":"Mail Web", "domain":"mail.example.com", "publicOrigin":ORIGIN,
+        "stalwartUrl":UPSTREAM,"provisioningKey":(SOURCE / "secrets/provisioning.key").read_text().strip()}, expected=409)
+    api("/installation/connections", "POST", {"id":service_id,"name":"Second real server","origin":"http://mail-web-stalwart-test:8080",
+        "settings":{"provisioning_key":"must-not-be-sent"},"domains":["second.example.com"]}, expected=409)
     print("PASS: equal real upstream IDs and names, local enrollment boundary, mail/drafts/quotas/admin/session isolation")
 
     # An additional domain reuses this connection's runtime keys and Hook.

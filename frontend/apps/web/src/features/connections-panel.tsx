@@ -11,14 +11,14 @@ import {RegistrationReadiness} from './registration-readiness';
 type Service={id:string;name:string;origin:string;configured:boolean};
 type Domain={id:string;serviceId:string;name:string;upstreamId:string};
 type Job={status:string;step:string;error:string;spec:{domain:string;createDomain:boolean};resources:Record<string,string>};
-export function ConnectionsPanel({token,origin,brand}:{token:string;origin:string;brand:string}){
+export function ConnectionsPanel({token,origin,brand,onDirtyChange}:{token:string;origin:string;brand:string;onDirtyChange:(dirty:boolean)=>void}){
  const[services,setServices]=useState<Service[]>([]),[bindings,setBindings]=useState<Domain[]>([]),[selected,setSelected]=useState('default'),[fresh,setFresh]=useState(false),[prepared,setPrepared]=useState(false),[name,setName]=useState(''),[base,setBase]=useState('');
  const[advanced,setAdvanced]=useState(false),[advancedDirty,setAdvancedDirty]=useState(false),[leave,setLeave]=useState<(()=>void)|null>(null);
  function guard(work:()=>void){if(dirty||advancedDirty)setLeave(()=>work);else work();}
  const[mode,setMode]=useState('password'),[username,setUsername]=useState(''),[password,setPassword]=useState(''),[key,setKey]=useState(''),[ticket,setTicket]=useState(''),[available,setAvailable]=useState<{id:string;name:string}[]>([]),[domain,setDomain]=useState(''),[createDomain,setCreateDomain]=useState(false),[missing,setMissing]=useState<string[]>([]),[preview,setPreview]=useState<string[]|null>(null),[job,setJob]=useState<Job|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const epoch=useRef(0);const current=services.find(s=>s.id===selected);const running=job?.status==='running'||job?.status==='applying';
  const dirty=!!password||!!key||!!ticket||(fresh&&!prepared&&!!(name||base));
- useEffect(()=>{if(!dirty)return;const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[dirty]);
+ useEffect(()=>{onDirtyChange(dirty||advancedDirty);return()=>onDirtyChange(false);},[dirty,advancedDirty,onDirtyChange]);
  const headers=()=>token?{Authorization:'Bearer '+token}:undefined;
  const scoped=(path:string,id=selected)=>path+'?serviceId='+encodeURIComponent(id);
  async function refresh(){const r=await api<{services:Service[];domains:Domain[]}>('/installation/connections',{headers:headers()});setServices(r.services);setBindings(r.domains);return r;}

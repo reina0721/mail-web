@@ -176,6 +176,20 @@ pub async fn hook(
         .envelope
         .ok_or(Error(StatusCode::BAD_REQUEST, "envelope_required"))?
         .to;
+    // A connection can host several domains. The sender's immutable mapping,
+    // rather than the first bound domain, defines its internal recipients.
+    let principal = sasl.login.to_lowercase();
+    let senders = db::query(db::Statement::PolicyReserveSelectPlatformUsers)
+        .bind(&app.service_id)
+        .bind(&principal)
+        .bind(&principal)
+        .bind(&principal)
+        .fetch_all(&app.db)
+        .await?;
+    if senders.len() != 1 {
+        return Err(Error(StatusCode::CONFLICT, "hook_identity_unresolved"));
+    }
+    let app = connections::for_domain(&app, &senders[0].get::<String, _>("domain_id")).await?;
     let count = recipients
         .iter()
         .map(|r| r.address.to_lowercase())
@@ -249,6 +263,66 @@ pub async fn service_hook(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn hook_counts_external_recipients_against_the_actual_senders_domain() {
+        let root = std::env::temp_dir().join(Uuid::new_v4().to_string());
+        let db = db::connect(&root.join("mail.sqlite")).await.unwrap();
+        sqlx::query(
+            "INSERT INTO mail_domains VALUES ('other','default','other.example','remote-other')",
+        )
+        .execute(&db)
+        .await
+        .unwrap();
+        let user = Uuid::new_v4();
+        sqlx::query("INSERT INTO platform_users(id,email,recovery_email,stalwart_id,status,domain_id) VALUES (?,'sender@other.example','recover@example.net','same-id','active','other')").bind(user).execute(&db).await.unwrap();
+        let app = Arc::new(App {
+            root: None,
+            revision: 0,
+            service_id: "default".into(),
+            domain_id: "default".into(),
+            db: db.clone(),
+            vault: Vault::new(&[1; 32]).unwrap(),
+            origin: "https://webmail.example".into(),
+            upstream: Stalwart {
+                http: reqwest::Client::new(),
+                base: "https://upstream.example".into(),
+            },
+            services: config::Services {
+                domain: "primary.example".into(),
+                hook_secret: "isolated-hook-secret".into(),
+                ..Default::default()
+            },
+        });
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "authorization",
+            HeaderValue::from_static("Bearer isolated-hook-secret"),
+        );
+        for (event, recipient) in [
+            ("internal", "recipient@other.example"),
+            ("external", "recipient@primary.example"),
+        ] {
+            let payload:Hook=serde_json::from_value(json!({"context":{"stage":"data","sasl":{"login":"same-id"},"queue":{"id":event}},"envelope":{"to":[{"address":recipient}]}})).unwrap();
+            assert_eq!(
+                hook(State(app.clone()), headers.clone(), Json(payload))
+                    .await
+                    .unwrap()
+                    .0["action"],
+                "accept"
+            );
+        }
+        let count: i64 = sqlx::query_scalar(
+            "SELECT sum(recipient_count) FROM outbound_reservations WHERE user_id=?",
+        )
+        .bind(user)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+        assert_eq!(count, 1);
+        db.close().await;
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[tokio::test]
     async fn atomic_limits_idempotency_and_persistence() {
         let root = std::env::temp_dir().join(Uuid::new_v4().to_string());
