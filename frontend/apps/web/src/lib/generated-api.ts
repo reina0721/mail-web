@@ -420,6 +420,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/installation/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["discover"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/installation/operator": {
         parameters: {
             query?: never;
@@ -652,7 +668,9 @@ export interface components {
             turnstileSiteKey?: string;
         };
         ConfigurationView: {
+            documentationUrl: string;
             hookSecretSet: boolean;
+            missingRequirements: string[];
             notificationKeySet: boolean;
             policyVerified: boolean;
             provisioningKeySet: boolean;
@@ -661,6 +679,12 @@ export interface components {
         };
         CredentialInput: {
             description: string;
+        };
+        DiscoveryInput: {
+            domain?: string | null;
+            provisioningKey?: string | null;
+            publicOrigin?: string | null;
+            stalwartUrl: string;
         };
         Draft: {
             attachments: components["schemas"]["Attachment"][];
@@ -1908,6 +1932,43 @@ export interface operations {
                 content?: never;
             };
             /** @description Authorization required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    discover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscoveryInput"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid source or missing key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Installation token or operator required */
             401: {
                 headers: {
                     [name: string]: unknown;

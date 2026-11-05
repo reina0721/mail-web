@@ -19,7 +19,7 @@ jobs:
       - run: node frontend/tooling/check-boundaries.mjs && node frontend/tooling/check-boundaries-fixtures.mjs
       - run: node tooling/check-persistence.mjs
       - run: pnpm --dir frontend typecheck && pnpm --dir frontend build
-      - run: node --test tests/scroll-hint.test.mjs tests/motion-styles.test.mjs tests/operation-id.test.mjs tests/admin-access.test.mjs
+      - run: node --test tests/scroll-hint.test.mjs tests/motion-styles.test.mjs tests/operation-id.test.mjs tests/admin-access.test.mjs tests/setup-guidance.test.mjs
       - run: rustup update stable && rustup default stable && rustup component add rustfmt clippy
       - run: cargo fmt --all -- --check && cargo test --locked --workspace && cargo clippy --locked --workspace --all-targets -- -D warnings
       - run: cargo run --locked -p mail-web -- --openapi > build-openapi.json && diff -u backend/contract/openapi.json build-openapi.json

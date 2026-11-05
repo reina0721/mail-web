@@ -79,6 +79,21 @@ try:
     service_key = (SOURCE / "secrets/provisioning.key").read_text().strip()
     settings = {"brand": "Independent Test Mail", "domain": "mail.example.com", "publicOrigin": ORIGIN,
                 "stalwartUrl": "http://mail-web-stalwart-test:8080", "provisioningKey": service_key}
+    probe = {"stalwartUrl": settings["stalwartUrl"], "provisioningKey": service_key,
+             "domain": "mail.example.com", "publicOrigin": ORIGIN}
+    assert request("/installation/discover", "POST", probe)[0] == 401
+    assert request("/installation/discover", "POST", probe, capability, "https://attacker.example")[0] == 403
+    code, found = request("/installation/discover", "POST", probe, capability)
+    assert code == 200, (code, found)
+    assert found["persisted"] is False and found["sections"]["accounts"] == "ready"
+    assert any(d["name"] == "mail.example.com" for d in found["domains"])
+    assert any(a["email"] == "operator-v2@mail.example.com" for a in found["accounts"])
+    assert all(a["email"].endswith("@mail.example.com") for a in found["accounts"])
+    assert not any(a["name"] == "mail-web-service" for a in found["accounts"])
+    assert service_key not in json.dumps(found)
+    assert (SOURCE / "secrets/mta-hook.key").read_text().strip() not in json.dumps(found)
+    assert not (ROOT / "config/runtime.enc").exists()
+    assert request("/installation")[1]["instanceId"] == initial["instanceId"]
     assert request("/installation/config", "PUT", settings, capability, "https://attacker.example")[0] == 403
     wrong_domain = dict(settings, domain="not-configured.example")
     assert request("/installation/config", "PUT", wrong_domain, capability)[0] == 400
@@ -89,6 +104,10 @@ try:
     current = restart_after_save()
     assert current["configured"] and current["instanceId"] != initial["instanceId"]
     assert current["brand"] == settings["brand"] and current["domain"] == "mail.example.com"
+    moved = {"stalwartUrl": "https://different.example.com", "domain": "mail.example.com"}
+    assert request("/installation/discover", "POST", moved, capability)[0] == 400
+    assert request("/installation/config", "PUT", dict(settings, stalwartUrl=moved["stalwartUrl"], provisioningKey=None), capability)[0] == 400
+    assert request("/installation/discover", "POST", dict(probe, provisioningKey=None), capability)[0] == 200
     code, view = request("/installation/config", capability=capability)
     assert code == 200 and view["provisioningKeySet"] and not view["settings"].get("provisioningKey")
     password = (SOURCE / "secrets/operator.initial-password").read_text().strip()

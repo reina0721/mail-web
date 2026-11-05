@@ -2,8 +2,8 @@
   "readyForPublicRegistration": false,
   "evidenceScope": {
     "historicalProductionRelease": "v0.1.0-alpha.3",
-    "candidateRelease": "v0.2.0-alpha.3",
-    "candidateStatus": "v0.2.0-alpha.3 passed frontend checks, 14 backend tests, strict Clippy, contract checks, real isolated Stalwart integration and public-release installation/restore. CI: https://github.com/reina0721/mail-web/actions/runs/41941406559. The selected real installation was configured through the panel and upgraded from alpha.1 to alpha.3 with its configuration and existing operator session preserved."
+    "candidateRelease": "v0.2.0-alpha.4",
+    "candidateStatus": "Guided setup and read-only discovery candidate; local frontend production build, type and architecture checks passed. Linux integration and published-release acceptance will be recorded after execution. Existing production evidence remains scoped to alpha.3."
   },
   "verifiedInIsolatedStalwart101": [
     "Real user credentials, mailbox login and operator isolation",

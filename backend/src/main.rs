@@ -567,6 +567,7 @@ async fn health(State(app): State<Arc<App>>) -> Result<Json<Value>> {
         installation::read_config,
         installation::save_config,
         installation::enroll_operator,
+        installation::discovery::discover,
         registration::public_policy,
         registration::challenge,
         registration::verify,

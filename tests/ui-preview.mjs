@@ -14,7 +14,9 @@ const messages=Array.from({length:54},(_,i)=>({id:String(i+1),subject:subjects[i
 const boxes=['inbox','sent','drafts','archive','junk','trash'].map(role=>({id:role,name:role,role,unreadEmails:role==='inbox'?8:0}));
 boxes.push({id:'projects',name:'项目协作',role:null,unreadEmails:0});
 const audit=[{id:'a1',actorId:'operator',subjectId:'lin',action:'account.update',outcome:'success',createdAt:1793797200000},{id:'a2',actorId:'operator',subjectId:null,action:'registration.update',outcome:'success',createdAt:1793793600000},{id:'a3',actorId:'operator',subjectId:null,action:'task.retry',outcome:'queued',createdAt:1793790000000}];
-const mode={expired:false,operator:true,fail:'',slow:false,theme:'light',ready:false};
+const mode={expired:false,operator:true,fail:'',slow:false,theme:'light',ready:false,setupConfigured:true,setupNeedsOperator:false,setupEpoch:0};
+const setupDocs='https://github.com/reina0721/mail-web/blob/main/docs/stalwart-setup.md';
+let setup={brand:'Mail Web',domain:'example.com',publicOrigin:'https://webmail.example.com',stalwartUrl:'https://mail.example.com',domainId:'preview-domain',notificationAccount:'',notificationEmail:'',hookId:'',turnstileSiteKey:''};
 const log=[];
 function json(res,data,status=200){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));}
 async function body(req){let s='';for await(const c of req)s+=c;return s?JSON.parse(s):{};}
@@ -23,11 +25,19 @@ http.createServer(async(req,res)=>{try{
  if(p==='/__preview/control'&&req.method==='POST'){Object.assign(mode,await body(req));return json(res,mode);}
  if(p==='/__preview/log')return json(res,log);
  if(p.startsWith('/api/v1/')){
-  const key=p.slice(7),input=req.method==='GET'?{}:await body(req);log.push({method:req.method,path:key,input});
-  if(key==='/installation')return json(res,{configured:true,needsOperator:false,brand:'Mail Web',domain:'mail.example',version:'preview',instanceId:'isolated-preview'});
+  const key=p.slice(7),input=req.method==='GET'?{}:await body(req);log.push({method:req.method,path:key,input:Object.fromEntries(Object.entries(input).map(([k,v])=>[k,/password|secret|token|provisioningKey|notificationKey/i.test(k)?'[redacted]':v]))});
+  if(key==='/installation')return json(res,{configured:mode.setupConfigured,needsOperator:mode.setupNeedsOperator,brand:setup.brand,domain:mode.setupConfigured?setup.domain:'',version:'preview',instanceId:'isolated-preview-'+mode.setupEpoch});
   if(key==='/registration/policy')return json(res,policy);
   if(mode.expired)return json(res,{code:'unauthorized'},401);
   if(mode.fail&&key.startsWith(mode.fail))return json(res,{code:'unavailable'},503);
+  if(key==='/installation/config'&&req.method==='GET')return json(res,{settings:mode.setupConfigured?setup:{brand:'Mail Web',domain:'',publicOrigin:'',stalwartUrl:'',domainId:'',notificationAccount:'',notificationEmail:'',hookId:'',turnstileSiteKey:''},provisioningKeySet:mode.setupConfigured,notificationKeySet:false,hookSecretSet:false,turnstileSecretSet:false,policyVerified:false,missingRequirements:['验证邮件账号','验证邮件密钥','Turnstile Site Key','Turnstile Secret','本部署专用 MTA Hook','Hook 共享密钥','SMTP／JMAP 提交协议验收声明'],documentationUrl:setupDocs});
+  if(key==='/installation/config'){setup=Object.fromEntries(Object.entries(input).filter(([k])=>!['provisioningKey','notificationKey','hookSecret','turnstileSecret'].includes(k)));mode.setupConfigured=true;mode.setupEpoch++;return json(res,{saved:true,restartRequired:true});}
+  if(key==='/installation/operator'){mode.setupNeedsOperator=false;return json(res,{});}
+  if(key==='/installation/discover'){
+   if(mode.slow)await new Promise(resolve=>setTimeout(resolve,input.domain==='other.example.com'?100:1200));
+   const base=input.stalwartUrl,domain=input.domain,callback=input.publicOrigin?.replace(/\/$/,'')+'/internal/mta-hook';
+   return json(res,{stalwartUrl:base,documentationUrl:setupDocs,persisted:false,domains:[{id:'preview-domain',name:'example.com'},{id:'preview-other',name:'other.example.com'}],accounts:domain?[{id:'preview-sender-'+domain,name:'verification',email:'verification@'+domain}]:[],hooks:[{id:'preview-hook',url:callback,matchesDeployment:true},{id:'other-app-hook',url:'https://unrelated.example.com/internal/mta-hook',matchesDeployment:false}],links:{admin:base+'/admin/',account:base+'/account/',domains:base+'/admin/Management/x:Domain',accounts:base+'/admin/Management/x:Account/User',hooks:base+'/admin/Settings/x:MtaHook',keys:base+'/account/Account/x:ApiKey'},sections:{domains:'ready',accounts:domain?'ready':'select_domain',hooks:mode.setupHookDenied?'permission_denied':'ready'},callbackUrl:callback});
+  }
   if(key==='/auth/session')return json(res,{id:'operator',email:'operator@example.com',operator:mode.operator});
   if(key==='/auth/logout'){mode.expired=true;return json(res,{});}
   if(key==='/account')return json(res,{preferences:{theme:mode.theme}});

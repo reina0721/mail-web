@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.2.0-alpha.3"
+    "version": "0.2.0-alpha.4"
   },
   "paths": {
     "/api/v1/account": {
@@ -900,6 +900,40 @@
         }
       }
     },
+    "/api/v1/installation/discover": {
+      "post": {
+        "tags": [
+          "installation"
+        ],
+        "operationId": "discover",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoveryInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid source or missing key"
+          },
+          "401": {
+            "description": "Installation token or operator required"
+          }
+        }
+      }
+    },
     "/api/v1/installation/operator": {
       "post": {
         "tags": [
@@ -1532,11 +1566,22 @@
           "notificationKeySet",
           "hookSecretSet",
           "turnstileSecretSet",
-          "policyVerified"
+          "policyVerified",
+          "missingRequirements",
+          "documentationUrl"
         ],
         "properties": {
+          "documentationUrl": {
+            "type": "string"
+          },
           "hookSecretSet": {
             "type": "boolean"
+          },
+          "missingRequirements": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "notificationKeySet": {
             "type": "boolean"
@@ -1562,6 +1607,35 @@
         ],
         "properties": {
           "description": {
+            "type": "string"
+          }
+        }
+      },
+      "DiscoveryInput": {
+        "type": "object",
+        "required": [
+          "stalwartUrl"
+        ],
+        "properties": {
+          "domain": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provisioningKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publicOrigin": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "stalwartUrl": {
             "type": "string"
           }
         }

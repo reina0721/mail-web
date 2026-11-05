@@ -1,6 +1,7 @@
 use super::*;
 use std::{io::Write, path::PathBuf};
 use subtle::ConstantTimeEq;
+pub(super) mod discovery;
 
 pub static RELOAD: tokio::sync::Notify = tokio::sync::Notify::const_new();
 static INSTANCE_ID: std::sync::LazyLock<String> = std::sync::LazyLock::new(token);
@@ -118,6 +119,7 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/installation", get(status))
         .route("/installation/config", get(read_config).put(save_config))
         .route("/installation/operator", post(enroll_operator))
+        .route("/installation/discover", post(discovery::discover))
 }
 #[derive(Serialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -220,6 +222,8 @@ pub(super) struct ConfigurationView {
     hook_secret_set: bool,
     turnstile_secret_set: bool,
     policy_verified: bool,
+    missing_requirements: Vec<String>,
+    documentation_url: String,
 }
 #[utoipa::path(get,path="/api/v1/installation/config",responses((status=200,body=ConfigurationView),(status=401,description="Maintenance token or operator session required")))]
 pub(super) async fn read_config(
@@ -249,6 +253,8 @@ pub(super) async fn read_config(
         hook_secret_set: !s.hook_secret.is_empty(),
         turnstile_secret_set: !s.turnstile_secret.is_empty(),
         policy_verified: s.policy_verified,
+        missing_requirements: discovery::missing(s),
+        documentation_url: discovery::documentation_url(),
     }))
 }
 fn domain_valid(domain: &str) -> bool {
@@ -310,7 +316,12 @@ pub(super) async fn save_config(
             return Err(Error(StatusCode::CONFLICT, "domain_has_accounts"));
         }
     }
-    let provisioning_key = retain_secret(input.provisioning_key, &app.services.provisioning_key);
+    let changed_server = base.origin().ascii_serialization() != app.upstream.base;
+    let provisioning_key = discovery::connection_key(
+        &app,
+        &base.origin().ascii_serialization(),
+        input.provisioning_key,
+    )?;
     if provisioning_key.is_empty() {
         return Err(Error(StatusCode::BAD_REQUEST, "provisioning_key_required"));
     }
@@ -345,10 +356,24 @@ pub(super) async fn save_config(
         brand,
         domain_id,
         provisioning_key,
-        notification_key: retain_secret(input.notification_key, &app.services.notification_key),
+        notification_key: retain_secret(
+            input.notification_key,
+            if changed_server {
+                ""
+            } else {
+                &app.services.notification_key
+            },
+        ),
         notification_account: input.notification_account,
         notification_email: input.notification_email,
-        hook_secret: retain_secret(input.hook_secret, &app.services.hook_secret),
+        hook_secret: retain_secret(
+            input.hook_secret,
+            if changed_server {
+                ""
+            } else {
+                &app.services.hook_secret
+            },
+        ),
         hook_id: input.hook_id,
         turnstile_secret: retain_secret(input.turnstile_secret, &app.services.turnstile_secret),
         turnstile_site_key: input.turnstile_site_key,

@@ -20,7 +20,7 @@
 
 ```sh
 INSTALL_DIR="$HOME/apps/mail-web"
-VERSION=v0.2.0-alpha.3
+VERSION=v0.2.0-alpha.4
 mkdir -p "$INSTALL_DIR"
 curl -fSL "https://raw.githubusercontent.com/reina0721/mail-web/$VERSION/deploy/install.sh" -o "$INSTALL_DIR/install.sh"
 sh "$INSTALL_DIR/install.sh" \
@@ -45,6 +45,8 @@ sh "$INSTALL_DIR/deploy/mail-web.sh" rotate-setup-token
 
 ## 3. 进入面板配置 Stalwart
 
+先阅读 [Stalwart 逐项配置教程](docs/stalwart-setup.md)：每个字段都列出用途、必填条件、完整菜单路径、创建步骤、复制哪个值、最低权限和排错方法。可选择“仅使用已有邮箱”或“开放注册与找回密码”两条路线。面板中的“查看配置教程”直接链接到对应章节。
+
 访问安装器给出的地址，或 `/setup/`，输入管理令牌。已登录的运营身份也可从账号菜单进入“站点配置”。
 
 填写：
@@ -61,7 +63,7 @@ sh "$INSTALL_DIR/deploy/mail-web.sh" rotate-setup-token
 
 保存后，进程有序退出，由 Docker 的重启策略重新启动，面板会等待新进程就绪。数据库、草稿和安装密钥保留。已有平台账号时，不允许简单替换邮箱域名。
 
-再次进入配置面板时，先点“读取现有配置”，再编辑需要调整的字段。通过 SSH 辅助入口访问时，网站访问地址仍应保留服务器的实际来源，不能改成临时的本地代理地址；留空密钥字段会保留已保存的密钥。
+再次进入配置面板时，已登录的运营身份会自动回读；失败时使用“读取配置／重试”，不会允许用空白表单覆盖现有配置。输入 Stalwart 地址后自动生成相关入口；填写专用密钥后可只读查询域名、账号及 Hook。通过 SSH 辅助入口访问时，网站访问地址仍应保留服务器的实际来源，不能改成临时的本地代理地址；同一服务器留空密钥字段会保留已保存的密钥。更换 Stalwart 来源必须重新提供该服务器的密钥，重新核对可选账号与 Hook。
 
 首次接通后，在面板绑定一个**已有的普通邮箱**作为本部署的运营身份：填写该邮箱、它的密码和外部恢复邮箱。服务器先验证邮箱所有权与普通用户角色，再建立本地运营关联；不修改该账号的 Stalwart 管理员权限或密码。Stalwart 管理员及带系统权限的服务身份不能作为此处的普通运营邮箱。
 
