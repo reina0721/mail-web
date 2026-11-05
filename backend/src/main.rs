@@ -432,7 +432,9 @@ async fn message(
 
     let html = msg["htmlBody"]
         .as_array()
-        .and_then(|parts| parts.first())
+        // JMAP may include a text/plain part in htmlBody as a fallback.
+        // Only HTML parts pass through the HTML sanitizer and iframe renderer.
+        .and_then(|parts| parts.iter().find(|part| part["type"] == "text/html"))
         .and_then(|p| p["partId"].as_str())
         .and_then(|part| msg["bodyValues"][part]["value"].as_str());
     if let Some(html) = html {
@@ -449,7 +451,7 @@ async fn message(
     }
     // Expose only the sanitized HTML; raw HTML body values never reach callers.
     if let Some(parts) = msg["htmlBody"].as_array().cloned() {
-        for part in parts {
+        for part in parts.iter().filter(|part| part["type"] == "text/html") {
             if let Some(id) = part["partId"].as_str() {
                 msg["bodyValues"][id] = Value::Null;
             }

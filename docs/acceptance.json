@@ -2,7 +2,7 @@
   "readyForPublicRegistration": false,
   "evidenceScope": {
     "historicalProductionRelease": "v0.1.0-alpha.3",
-    "candidateRelease": "v0.2.0-alpha.2",
+    "candidateRelease": "v0.2.0-alpha.3",
     "candidateStatus": "Local frontend build, type and boundary checks passed. Candidate-specific Linux integration, public-release installation and new deployment verification are recorded by CI and the deployment report after execution. Historical evidence below does not certify the new deployment."
   },
   "verifiedInIsolatedStalwart101": [

@@ -124,6 +124,7 @@ assert admin_profile["quotaBytes"] == 1073741824
 print("PASS: real login, account quota and operator boundary")
 
 value = draft(admin.email, "Private draft " + name)
+value["text"] = "First paragraph\n\nContact <sender@example.net>\nLast line\n" + value["text"]
 boundary = "mailweb" + uuid.uuid4().hex
 attachment = b"Real attachment ownership and round-trip proof."
 multipart = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="proof.txt"\r\nContent-Type: text/plain\r\n\r\n'.encode() + attachment + f"\r\n--{boundary}--\r\n".encode())
@@ -132,6 +133,8 @@ value["attachments"] = [{"blob_id": blob["blobId"], "name": "proof.txt", "type":
 saved = admin.api("/drafts", "POST", value)["id"]
 detail = admin.api("/messages/" + saved)
 assert detail["subject"] == value["subject"] and detail["attachments"][0]["name"] == "proof.txt"
+assert not detail.get("safeHtml")
+assert "First paragraph\n\nContact <sender@example.net>\nLast line" in detail["plainText"]
 assert admin.api("/attachments/" + detail["attachments"][0]["blobId"] + "?message=" + saved) == attachment
 ordinary.api("/messages/" + saved, expected=404)
 ordinary.api("/attachments/" + blob["blobId"] + "?message=" + saved, expected=404)

@@ -20,7 +20,7 @@
 
 ```sh
 INSTALL_DIR="$HOME/apps/mail-web"
-VERSION=v0.2.0-alpha.2
+VERSION=v0.2.0-alpha.3
 mkdir -p "$INSTALL_DIR"
 curl -fSL "https://raw.githubusercontent.com/reina0721/mail-web/$VERSION/deploy/install.sh" -o "$INSTALL_DIR/install.sh"
 sh "$INSTALL_DIR/install.sh" \
