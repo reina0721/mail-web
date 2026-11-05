@@ -197,10 +197,10 @@ impl Statement {
                 "UPDATE readiness_interactions SET attempts=attempts+1 WHERE ticket_hash=? AND fingerprint=? AND expires_at>? AND consumed=0 AND attempts<5"
             }
             Self::ReadinessConsume => {
-                "UPDATE readiness_interactions SET consumed=1 WHERE ticket_hash=? AND fingerprint=? AND expires_at>? AND consumed=0 AND attempts<=5 AND code_hash=?"
+                "UPDATE readiness_interactions SET consumed=1 WHERE ticket_hash=? AND fingerprint=? AND expires_at>? AND consumed=0 AND attempts<=5 AND captcha_verified=1 AND code_hash=?"
             }
             Self::ReadinessHuman => {
-                "UPDATE registration_readiness SET human_verified_at=? WHERE fingerprint=? AND automatic_ok=1"
+                "UPDATE registration_readiness SET human_verified_at=? WHERE fingerprint=?"
             }
             Self::MailSendDraftSubmissionCount => {
                 "SELECT count(*) FROM operations WHERE user_id=? AND kind='send' AND status IN ('pending','unknown','succeeded') AND json_extract(result,'$.emailId')=?"

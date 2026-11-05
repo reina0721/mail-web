@@ -637,7 +637,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["send"];
+        post: operations["readiness_send"];
         delete?: never;
         options?: never;
         head?: never;
@@ -669,7 +669,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["verify"];
+        post: operations["readiness_verify"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2602,7 +2602,7 @@ export interface operations {
             };
         };
     };
-    send: {
+    readiness_send: {
         parameters: {
             query?: never;
             header?: never;
@@ -2648,7 +2648,7 @@ export interface operations {
             };
         };
     };
-    verify: {
+    readiness_verify: {
         parameters: {
             query?: never;
             header?: never;

@@ -1387,7 +1387,7 @@
         "tags": [
           "readiness"
         ],
-        "operationId": "send",
+        "operationId": "readiness_send",
         "requestBody": {
           "content": {
             "application/json": {
@@ -1439,7 +1439,7 @@
         "tags": [
           "readiness"
         ],
-        "operationId": "verify",
+        "operationId": "readiness_verify",
         "requestBody": {
           "content": {
             "application/json": {

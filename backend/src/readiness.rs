@@ -8,8 +8,8 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/installation/readiness", get(report).post(run))
         .route("/installation/readiness/link", post(link))
         .route("/readiness/session", post(interaction))
-        .route("/readiness/send", post(send))
-        .route("/readiness/verify", post(verify))
+        .route("/readiness/send", post(readiness_send))
+        .route("/readiness/verify", post(readiness_verify))
 }
 fn fingerprint(app: &App) -> String {
     let mut services = app.services.clone();
@@ -325,6 +325,106 @@ mod tests {
             .unwrap();
         assert!(!ready(&app).await.unwrap());
     }
+
+    #[tokio::test]
+    async fn check_codes_are_single_use_config_bound_and_attempt_limited() {
+        let root = std::env::temp_dir().join(Uuid::new_v4().to_string());
+        let db = db::connect(&root.join("test.sqlite")).await.unwrap();
+        let app = Arc::new(App {
+            db,
+            upstream: Stalwart {
+                http: reqwest::Client::new(),
+                base: "https://mail.example.com".into(),
+            },
+            vault: Vault::new(&[4; 32]).unwrap(),
+            origin: "https://webmail.example.com".into(),
+            services: config::Services {
+                turnstile_secret: "private-pepper".into(),
+                ..Default::default()
+            },
+        });
+        let revision = fingerprint(&app);
+        db::query(db::Statement::ReadinessWrite)
+            .bind(&revision)
+            .bind("[]")
+            .bind(db::now())
+            .bind(true)
+            .execute(&app.db)
+            .await
+            .unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "origin",
+            HeaderValue::from_static("https://webmail.example.com"),
+        );
+        for success in [false, true] {
+            let ticket = token();
+            let digest = hash(&format!(
+                "readiness:{ticket}:123456:{}",
+                app.services.turnstile_secret
+            ));
+            db::query(db::Statement::ReadinessLink)
+                .bind(hash(&ticket))
+                .bind(&revision)
+                .bind(db::now() + 600_000)
+                .execute(&app.db)
+                .await
+                .unwrap();
+            db::query(db::Statement::ReadinessClaimSend)
+                .bind("receiver@example.net")
+                .bind(&digest)
+                .bind(hash(&ticket))
+                .bind(&revision)
+                .bind(db::now())
+                .execute(&app.db)
+                .await
+                .unwrap();
+            let input = |code: &str| Input {
+                ticket: ticket.clone(),
+                email: String::new(),
+                turnstile_token: String::new(),
+                code: code.into(),
+            };
+            assert!(
+                readiness_verify(State(app.clone()), HeaderMap::new(), Json(input("123456")))
+                    .await
+                    .is_err()
+            );
+            let mut changed = (*app).clone();
+            changed.services.turnstile_secret = "changed".into();
+            assert!(session(&changed, &input("123456")).await.is_err());
+            if !success {
+                for _ in 0..5 {
+                    assert!(
+                        readiness_verify(
+                            State(app.clone()),
+                            headers.clone(),
+                            Json(input("999999"))
+                        )
+                        .await
+                        .is_err()
+                    );
+                }
+                assert!(
+                    readiness_verify(State(app.clone()), headers.clone(), Json(input("123456")))
+                        .await
+                        .is_err()
+                );
+            } else {
+                let result =
+                    readiness_verify(State(app.clone()), headers.clone(), Json(input("123456")))
+                        .await
+                        .unwrap();
+                assert_eq!(result.0["registrationOpened"], false);
+                assert!(result.0.get("verificationToken").is_none());
+                assert!(
+                    readiness_verify(State(app.clone()), headers.clone(), Json(input("123456")))
+                        .await
+                        .is_err()
+                );
+            }
+        }
+    }
 }
 #[utoipa::path(post,path="/api/v1/installation/readiness/link",responses((status=200,body=Value)))]
 pub(crate) async fn link(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Json<Value>> {
@@ -383,13 +483,13 @@ pub(crate) async fn interaction(
     Json(input): Json<Input>,
 ) -> Result<Json<Value>> {
     same_origin(&app, &headers)?;
-    let _ = session(&app, &input).await?;
+    let session = session(&app, &input).await?;
     Ok(Json(
-        json!({"siteKey":app.services.turnstile_site_key,"mailSent":false}),
+        json!({"siteKey":app.services.turnstile_site_key,"mailSent":session.get::<bool,_>("captcha_verified")}),
     ))
 }
 #[utoipa::path(post,path="/api/v1/readiness/send",request_body=Value,responses((status=200,body=Value)))]
-pub(crate) async fn send(
+pub(crate) async fn readiness_send(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
     Json(input): Json<Input>,
@@ -443,7 +543,7 @@ pub(crate) async fn send(
     Ok(Json(json!({"sent":true})))
 }
 #[utoipa::path(post,path="/api/v1/readiness/verify",request_body=Value,responses((status=200,body=Value)))]
-pub(crate) async fn verify(
+pub(crate) async fn readiness_verify(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
     Json(input): Json<Input>,
