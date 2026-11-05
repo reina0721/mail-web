@@ -129,3 +129,13 @@ The production hostname/HTTPS proxy and actual production Turnstile token flow a
 not yet accepted. DNS, Nginx and certificate changes are outside the authorized work
 scope. Browser/device and screen-reader coverage remains limited to the focused
 checks above. No stable release or open public registration is claimed.
+
+## Generic v0.2.0-alpha.3 deployment
+
+[Workflow 41941406559](https://github.com/reina0721/mail-web/actions/runs/41941406559) passed the production frontend build, type and architecture checks, 14 backend tests, strict Clippy, generated contract comparison, real isolated Stalwart integration, and public-release clean/repeated install plus backup/restore rehearsal. The isolated mail test now checks multiline plain text and literal angle-bracket addresses alongside sanitized HTML.
+
+A separate real installation used only its explicitly selected application directory and a new container. Its image was downloaded from GitHub Releases, checksum-verified and loaded with Docker; no registry pull, source compilation or new host software was used. The panel connected the existing Stalwart domain, encrypted its dedicated service credential and enrolled an existing ordinary mailbox without resetting its password or changing its remote role. Configuration reads redact secrets.
+
+The maintenance CLI then upgraded this installation from alpha.1 to alpha.3, preserving its encryption key, configuration, operator mapping and active browser session. Consistent snapshots were saved before and after the update. All bind mounts remain under the selected directory, Docker logs are disabled in favor of relative application logs, and the original seven containers retained their IDs. Real inbox/deep-link reading, operations, account drawer/focus return and corrected text formatting were checked in the browser.
+
+Public registration remains closed. This deployment did not take over another application's submission Hook or claim new public-origin Turnstile/signup or external delivery acceptance. Historical delivery evidence above remains scoped to its original release and installation.

@@ -3,7 +3,7 @@
   "evidenceScope": {
     "historicalProductionRelease": "v0.1.0-alpha.3",
     "candidateRelease": "v0.2.0-alpha.3",
-    "candidateStatus": "Local frontend build, type and boundary checks passed. Candidate-specific Linux integration, public-release installation and new deployment verification are recorded by CI and the deployment report after execution. Historical evidence below does not certify the new deployment."
+    "candidateStatus": "v0.2.0-alpha.3 passed frontend checks, 14 backend tests, strict Clippy, contract checks, real isolated Stalwart integration and public-release installation/restore. CI: https://github.com/reina0721/mail-web/actions/runs/41941406559. The selected real installation was configured through the panel and upgraded from alpha.1 to alpha.3 with its configuration and existing operator session preserved."
   },
   "verifiedInIsolatedStalwart101": [
     "Real user credentials, mailbox login and operator isolation",
@@ -35,5 +35,14 @@
     "Production Turnstile token verification through the final HTTPS origin",
     "Broader screen-reader and browser/device accessibility coverage",
     "Public-origin signup including an actual Turnstile token and externally delivered verification code"
+  ],
+  "verifiedInGenericDeployment": [
+    "Fresh artifact-only installation in a user-selected directory, custom container name and explicit IP/port binding",
+    "Protected panel validated the existing Stalwart domain and dedicated directory key; encrypted configuration and secret-redacted reads verified",
+    "Existing ordinary mailbox enrolled as local operator; original mailbox password and remote role unchanged",
+    "Real mailbox login, message deep link, operations overview, account drawer and focus return",
+    "CLI update from v0.2.0-alpha.1 to v0.2.0-alpha.3 preserved the installation key, configuration, operator mapping and live browser session",
+    "Consistent snapshots saved before and after the update; all application bind mounts remain below the selected directory; original seven containers retained their IDs",
+    "Real JMAP text/plain fallback retains paragraphs and literal angle-bracket addresses; standard folders display inbox first"
   ]
 }
