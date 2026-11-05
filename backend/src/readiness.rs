@@ -133,7 +133,10 @@ fn scope_matches(actual: &str, expected: &str) -> bool {
 fn hook_scope_matches(enable: &Value, expected: &str) -> bool {
     enable.as_object().is_some_and(|fields| {
         fields.iter().all(|(key, value)| {
-            key == "else" || (key == "match" && value.as_array().is_some_and(Vec::is_empty))
+            key == "else"
+                || (key == "match"
+                    && (value.as_array().is_some_and(Vec::is_empty)
+                        || value.as_object().is_some_and(serde_json::Map::is_empty)))
         })
     }) && scope_matches(enable["else"].as_str().unwrap_or_default(), expected)
 }
@@ -308,6 +311,14 @@ mod tests {
         let expected = "!is_empty(authenticated_as) && contains([\"a\",\"a@example.com\"], to_lowercase(authenticated_as))";
         assert!(scope_matches(
             "!is_empty(authenticated_as) && contains([\"a@example.com\", \"a\"], to_lowercase(authenticated_as))",
+            expected
+        ));
+        assert!(hook_scope_matches(
+            &json!({"else":expected,"match":{}}),
+            expected
+        ));
+        assert!(!hook_scope_matches(
+            &json!({"else":expected,"match":{"0":{"if":"true","then":"true"}}}),
             expected
         ));
         assert!(hook_scope_matches(
