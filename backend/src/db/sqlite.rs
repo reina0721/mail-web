@@ -188,7 +188,7 @@ impl Statement {
                 "SELECT * FROM readiness_interactions WHERE ticket_hash=? AND fingerprint=? AND expires_at>? AND consumed=0"
             }
             Self::ReadinessClaimSend => {
-                "UPDATE readiness_interactions SET captcha_verified=1,email=?,code_hash=? WHERE ticket_hash=? AND fingerprint=? AND expires_at>? AND consumed=0 AND captcha_verified=0"
+                "UPDATE readiness_interactions SET captcha_verified=1,email=?,code_hash=?,expires_at=? WHERE ticket_hash=? AND fingerprint=? AND expires_at>? AND consumed=0 AND captcha_verified=0"
             }
             Self::ReadinessSent => {
                 "UPDATE readiness_interactions SET code_hash=NULL,captcha_verified=0 WHERE ticket_hash=? AND consumed=0"

@@ -20,7 +20,7 @@
 
 ```sh
 INSTALL_DIR="$HOME/apps/mail-web"
-VERSION=v0.2.0-alpha.6
+VERSION=v0.2.0-alpha.7
 mkdir -p "$INSTALL_DIR"
 curl -fSL "https://raw.githubusercontent.com/reina0721/mail-web/$VERSION/deploy/install.sh" -o "$INSTALL_DIR/install.sh"
 sh "$INSTALL_DIR/install.sh" \
@@ -108,19 +108,11 @@ node admin-access.mjs \
 1. 验证邮件身份：普通发件账号 ID、对应 API 密钥和完整发件地址。
 2. Turnstile：Site Key 与 Secret；外部验证服务需要匹配实际网站来源。
 3. 专用于本部署的 MTA Hook：ID 和共享密钥。不要共用其他应用的 Hook；其回调必须能够从 Stalwart 到达本部署的 `/internal/mta-hook`。
-4. 实际验证 SMTP、原生 JMAP 与 Webmail 的限额、应用停机时的失败关闭行为和重启持久性。
+4. 在页面内完成本站自动检查、人机验证与验证码收信；完整协议回归作为版本发布检查执行。
 
 `deploy/bootstrap-stalwart.sh` 与 `deploy/setup-hook.sh` 是可选高级辅助脚本。它们只在安装目录写入项目文件，通过 Stalwart API 创建独立服务身份和新 Hook，不改管理员密码。必须显式提供 `MAIL_DOMAIN`、`STALWART_ADMIN_EMAIL`、临时管理凭据，以及 Stalwart 可达的 `MTA_HOOK_URL`。域名和回调地址没有部署站点默认值。现有名称冲突时拒绝接管。临时管理凭据应在结束后撤销。
 
-完成真实提交协议验收后，显式记录验收状态：
-
-```sh
-sh "$INSTALL_DIR/deploy/mail-web.sh" policy-verified true
-# 撤销验收声明：
-sh "$INSTALL_DIR/deploy/mail-web.sh" policy-verified false
-```
-
-这是部署人的验收声明，不代替协议测试。连接或 Hook 参数变化会使声明失效。条件齐备后，再由运营后台开放注册；不满足条件时保持关闭。
+正常开通请在自动配置结果或运营后台点击 **检查注册条件**，修复清单中的具体问题，再通过正式网站完成真实 Turnstile 和外部验证码收信。返回刷新结果后，由运营人员开启注册并保存策略。无需执行手工验收命令，也不会停止生产服务或修改正常邮箱的限额。旧 policy-verified 命令仅保留为历史声明，不作为注册门槛。
 
 高级创建新运营邮箱：在本安装 `secrets/operator.initial-password` 写入至少 16 字符的初始密码，使用已配置的目录服务及专属 Hook 执行：
 

@@ -1,7 +1,7 @@
-Mail Web v0.2.0-alpha.6
+Mail Web v0.2.0-alpha.7
 
-Adds one-time administrative authorization and automatic Stalwart initialization: choose an existing or new domain, bind or create an ordinary operator, and create dedicated directory/sender identities, API credentials and a scoped submission Hook. Administrator passwords, administrative API keys and Cloudflare Tokens remain memory-only. The protected wizard supports resource preview, durable encrypted progress, cancellation and reauthorization-based retry. New Hooks remain disabled until the restarted callback authenticates and scope synchronization succeeds.
+Replaces the manual protocol-attestation registration gate with deployment readiness checks. Setup and operations share a detailed checklist; domains, runtime permissions, sender identities, Hook configuration/scope and callback authentication are inspected without creating resources. A purpose-limited check page at the configured website origin verifies real Turnstile and actual external-mail receipt before registration can be enabled manually.
 
-Cloudflare Turnstile Widgets can be created using an account-scoped API Token; Site Key and Secret are captured automatically, while the Token is discarded. Existing manually configured settings remain available under Advanced configuration. See docs/stalwart-setup.md#automatic.
+Readiness and one-time check credentials persist in SQLite. Configuration changes invalidate receipts; completed human checks survive ordinary restarts and branding/default-limit edits. Public policy separates requested enablement from effective availability. Legacy protocol declarations remain historical metadata. Full SMTP/JMAP quota, fail-closed and restart regression remain mandatory release checks; the readiness probe is not represented as a production protocol test.
 
-The artifact-only installer and CLI preserve the selected directory, account data and configuration. Public registration and protocol acceptance are not automatically enabled or certified. Real Cloudflare creation still requires a user-supplied Token; isolated transport tests are distinct from that acceptance.
+Updates retain installation configuration and account data. Real production human verification and mailbox-code entry are completed by the owner in the browser, not fabricated by deployment automation.

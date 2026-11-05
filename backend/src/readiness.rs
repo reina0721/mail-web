@@ -70,8 +70,10 @@ pub async fn view(app: &App) -> Result<Value> {
     } else {
         (json!([]), 0, 0)
     };
+    let ready = ready(app).await?;
+    let requested = registration::settings(app).await?["enabled"] == true;
     Ok(
-        json!({"ready":ready(app).await?,"items":items,"checkedAt":checked,"humanVerifiedAt":human,"manualDeclaration":app.services.policy_verified,"releaseVersion":env!("CARGO_PKG_VERSION"),"protocolScope":"版本协议回归与本站检查分开展示；本站未执行生产停机或 SMTP/JMAP 压力测试"}),
+        json!({"ready":ready,"requestedEnabled":requested,"effectiveEnabled":requested&&ready,"items":items,"checkedAt":checked,"humanVerifiedAt":human,"manualDeclaration":app.services.policy_verified,"releaseVersion":env!("CARGO_PKG_VERSION"),"protocolScope":"版本协议回归与本站检查分开展示；本站未执行生产停机或 SMTP/JMAP 压力测试"}),
     )
 }
 #[utoipa::path(get,path="/api/v1/installation/readiness",responses((status=200,body=Value)))]
@@ -111,6 +113,22 @@ async fn permissions(app: &App, key: &str, required: &[&str]) -> Result<()> {
         return Err(Error(StatusCode::FORBIDDEN, "required_permissions_missing"));
     }
     Ok(())
+}
+fn scope_matches(actual: &str, expected: &str) -> bool {
+    fn names(expression: &str) -> Option<Vec<String>> {
+        let list = expression
+            .trim()
+            .strip_prefix("!is_empty(authenticated_as) && contains(")?
+            .strip_suffix(", to_lowercase(authenticated_as))")?;
+        let mut names: Vec<String> = serde_json::from_str(list).ok()?;
+        names.sort();
+        names.dedup();
+        Some(names)
+    }
+    if actual == expected {
+        return true;
+    }
+    matches!((names(actual),names(expected)),(Some(a),Some(b)) if a==b)
 }
 pub async fn check(app: &App) -> Result<()> {
     let _guard = CHECK.lock().await;
@@ -204,7 +222,7 @@ pub async fn check(app: &App) -> Result<()> {
         }
         .await
     );
-    item!("hook","专用 Hook 配置与账号作用范围",async{let value=app.upstream.call(&s.provisioning_key,"x:MtaHook/get",json!({"ids":[s.hook_id],"properties":["id","url","enable","stages","tempFailOnError","httpAuth"]})).await?;let h=&value["list"][0];if h["url"]!=format!("{}/internal/mta-hook",app.origin)||h["stages"]["data"]!=true||h["tempFailOnError"]!=true||h["httpAuth"]["@type"]!="Bearer"||h["enable"]["else"]!=policy::scope_expression(app).await?{return Err(Error(StatusCode::BAD_REQUEST,"hook_configuration_mismatch"));}Ok(())}.await);
+    item!("hook","专用 Hook 配置与账号作用范围",async{let value=app.upstream.call(&s.provisioning_key,"x:MtaHook/get",json!({"ids":[s.hook_id],"properties":["id","url","enable","stages","tempFailOnError","httpAuth"]})).await?;let h=&value["list"][0];if h["url"]!=format!("{}/internal/mta-hook",app.origin)||h["stages"]["data"]!=true||h["tempFailOnError"]!=true||h["httpAuth"]["@type"]!="Bearer"||!scope_matches(h["enable"]["else"].as_str().unwrap_or_default(),&policy::scope_expression(app).await?){return Err(Error(StatusCode::BAD_REQUEST,"hook_configuration_mismatch"));}Ok(())}.await);
     item!(
         "callback",
         "网站回调认证（不代表协议实测）",
@@ -263,6 +281,22 @@ pub async fn worker(app: Arc<App>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn scope_checks_accept_equivalent_sets_but_reject_extra_accounts_and_rules() {
+        let expected = "!is_empty(authenticated_as) && contains([\"a\",\"a@example.com\"], to_lowercase(authenticated_as))";
+        assert!(scope_matches(
+            "!is_empty(authenticated_as) && contains([\"a@example.com\", \"a\"], to_lowercase(authenticated_as))",
+            expected
+        ));
+        for invalid in [
+            "true",
+            "false",
+            "!is_empty(authenticated_as) && contains([\"a\",\"a@example.com\",\"other\"], to_lowercase(authenticated_as))",
+            "true || !is_empty(authenticated_as) && contains([\"a\",\"a@example.com\"], to_lowercase(authenticated_as))",
+        ] {
+            assert!(!scope_matches(invalid, expected));
+        }
+    }
     #[tokio::test]
     async fn readiness_is_config_bound_and_manual_declaration_does_not_open_registration() {
         let root = std::env::temp_dir().join(Uuid::new_v4().to_string());
@@ -374,6 +408,7 @@ mod tests {
             db::query(db::Statement::ReadinessClaimSend)
                 .bind("receiver@example.net")
                 .bind(&digest)
+                .bind(db::now() + 600_000)
                 .bind(hash(&ticket))
                 .bind(&revision)
                 .bind(db::now())
@@ -519,6 +554,7 @@ pub(crate) async fn readiness_send(
     let changed = db::query(db::Statement::ReadinessClaimSend)
         .bind(&email)
         .bind(&digest)
+        .bind(db::now() + 600_000)
         .bind(hash(&input.ticket))
         .bind(fingerprint(&app))
         .bind(db::now())

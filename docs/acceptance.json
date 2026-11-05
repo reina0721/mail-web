@@ -2,8 +2,8 @@
   "readyForPublicRegistration": false,
   "evidenceScope": {
     "historicalProductionRelease": "v0.1.0-alpha.3",
-    "candidateRelease": "v0.2.0-alpha.6",
-    "candidateStatus": "Accepted prerelease: workflow 42047213713 passed frontend build/contracts, 23 backend tests, isolated Basic/API-key automatic installation, interrupted/lost-key-response recovery, scoped credential metadata, full platform/identity regression and published artifact installation/restore. Live webmail1 CLI update to alpha.6 preserved exact encrypted configuration and platform account mappings. Cloudflare live creation awaits an owner-supplied Token."
+    "candidateRelease": "v0.2.0-alpha.7",
+    "candidateStatus": "Registration readiness candidate: 26 local backend tests and type/build/boundary checks passed. Removes legacy attestation from gating and adds configuration-bound automatic/human checks. Final isolated release and production panel verification pending."
   },
   "verifiedInIsolatedStalwart101": [
     "Real user credentials, mailbox login and operator isolation",
