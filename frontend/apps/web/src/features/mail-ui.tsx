@@ -72,13 +72,14 @@ export function EmptyState({ title, description, icon = 'mail' }: {
     description: string;
     icon?: string;
 }) { return <div className="empty-state"><span className="empty-icon"><MailIcon name={icon} size={30}/></span><h2>{title}</h2><p>{description}</p></div>; }
+const folderOrder:Record<string,number>={inbox:0,sent:1,drafts:2,archive:3,junk:4,trash:5};
 export function FolderNav({ boxes, selected, onSelect, onCompose, onManage }: {
     boxes: Box[];
     selected: string;
     onSelect: (id: string) => void;
     onCompose: () => void;
     onManage: () => void;
-}) { const brand=useSiteSettings(state=>state.brand);return <div className="folder-content"><Action fullWidth leadingIcon={<MailIcon name="edit"/>} onPress={onCompose}>写邮件</Action><p className="nav-eyebrow">我的邮箱</p><nav aria-label="邮箱文件夹">{boxes.map(b => <button type="button" key={b.id} className={'folder-link' + (selected === b.id ? ' is-current' : '')} aria-current={selected === b.id ? 'page' : undefined} onClick={() => onSelect(b.id)}><MailIcon name={b.role ?? 'folder'}/><span>{boxLabel(b)}</span>{b.unreadEmails > 0 && <span className="unread-count">{b.unreadEmails}</span>}</button>)}</nav><button className="folder-manage" type="button" onClick={onManage}><MailIcon name="settings" size={17}/>管理文件夹</button><div className="sidebar-footer"><span className="sidebar-rule"/><span>{brand}</span><small>让沟通，井井有条。</small></div></div>; }
+}) { const brand=useSiteSettings(state=>state.brand);return <div className="folder-content"><Action fullWidth leadingIcon={<MailIcon name="edit"/>} onPress={onCompose}>写邮件</Action><p className="nav-eyebrow">我的邮箱</p><nav aria-label="邮箱文件夹">{[...boxes].sort((a,b)=>(folderOrder[a.role??""]??6)-(folderOrder[b.role??""]??6)).map(b => <button type="button" key={b.id} className={'folder-link' + (selected === b.id ? ' is-current' : '')} aria-current={selected === b.id ? 'page' : undefined} onClick={() => onSelect(b.id)}><MailIcon name={b.role ?? 'folder'}/><span>{boxLabel(b)}</span>{b.unreadEmails > 0 && <span className="unread-count">{b.unreadEmails}</span>}</button>)}</nav><button className="folder-manage" type="button" onClick={onManage}><MailIcon name="settings" size={17}/>管理文件夹</button><div className="sidebar-footer"><span className="sidebar-rule"/><span>{brand}</span><small>让沟通，井井有条。</small></div></div>; }
 function shortDate(value: string) { const date = new Date(value); return Number.isNaN(date.valueOf()) ? '' : new Intl.DateTimeFormat('zh-CN', { month: 'numeric', day: 'numeric' }).format(date); }
 export function MessageList({ messages, activeId, checked, onCheck, onRead, onStar, pending }: {
     messages: Message[];

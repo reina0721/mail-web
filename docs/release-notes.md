@@ -1,4 +1,4 @@
-Mail Web v0.2.0-alpha.1
+Mail Web v0.2.0-alpha.2
 
 Generic, independently configurable Webmail: choose the site name, existing Stalwart domain and connection credentials in the protected installation panel. Configuration is encrypted at rest; existing ordinary mailboxes can be enrolled as local operators without changing their Stalwart roles.
 
