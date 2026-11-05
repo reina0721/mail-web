@@ -10,24 +10,7 @@ pub async fn sync_scope(app: &App) -> Result<()> {
         ));
     }
     let _guard = SCOPE_LOCK.lock().await;
-    let rows = db::query(db::Statement::PolicySyncScopeSelectPlatformUsers)
-        .fetch_all(&app.db)
-        .await?;
-    let mut names = Vec::<String>::new();
-    for row in rows {
-        let email: String = row.get("email");
-        names.push(email.split('@').next().unwrap_or("").to_string());
-        names.push(email);
-        names.push(row.get("stalwart_id"));
-    }
-    let expression = if names.is_empty() {
-        "false".into()
-    } else {
-        format!(
-            "!is_empty(authenticated_as) && contains({}, to_lowercase(authenticated_as))",
-            serde_json::to_string(&names).map_err(|_| internal("scope"))?
-        )
-    };
+    let expression = scope_expression(app).await?;
     let mut update = json!({});
     update[&app.services.hook_id] = json!({"enable":{"else":expression}});
     app.upstream
@@ -193,6 +176,29 @@ pub async fn hook(
             json!({"action":"reject","response":{"status":451,"enhancedStatus":"4.7.0","message":"Account sending limit reached; retry later"}}),
         ))
     }
+}
+
+pub async fn scope_expression(app: &App) -> Result<String> {
+    let rows = db::query(db::Statement::PolicySyncScopeSelectPlatformUsers)
+        .fetch_all(&app.db)
+        .await?;
+    let mut names = Vec::<String>::new();
+    for row in rows {
+        let email: String = row.get("email");
+        names.push(email.split('@').next().unwrap_or("").to_string());
+        names.push(email);
+        names.push(row.get("stalwart_id"));
+    }
+    let expression = if names.is_empty() {
+        "false".into()
+    } else {
+        format!(
+            "!is_empty(authenticated_as) && contains({}, to_lowercase(authenticated_as))",
+            serde_json::to_string(&names).map_err(|_| internal("scope"))?
+        )
+    };
+
+    Ok(expression)
 }
 
 #[cfg(test)]

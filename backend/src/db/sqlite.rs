@@ -73,6 +73,15 @@ mod tests {
 pub type Pool = SqlitePool;
 #[derive(Clone, Copy)]
 pub enum Statement {
+    ReadinessGet,
+    ReadinessWrite,
+    ReadinessLink,
+    ReadinessInteraction,
+    ReadinessClaimSend,
+    ReadinessSent,
+    ReadinessAttempt,
+    ReadinessConsume,
+    ReadinessHuman,
     MailSendDraftSubmissionCount,
     MainMessageSubmission,
     AccountInitializePolicyVersion,
@@ -168,6 +177,31 @@ pub enum Statement {
 impl Statement {
     fn sql(self) -> &'static str {
         match self {
+            Self::ReadinessGet => "SELECT * FROM registration_readiness WHERE fingerprint=?",
+            Self::ReadinessWrite => {
+                "INSERT INTO registration_readiness(fingerprint,report,checked_at,automatic_ok) VALUES (?,?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET report=excluded.report,checked_at=excluded.checked_at,automatic_ok=excluded.automatic_ok"
+            }
+            Self::ReadinessLink => {
+                "INSERT INTO readiness_interactions(ticket_hash,fingerprint,expires_at) VALUES (?,?,?)"
+            }
+            Self::ReadinessInteraction => {
+                "SELECT * FROM readiness_interactions WHERE ticket_hash=? AND fingerprint=? AND expires_at>? AND consumed=0"
+            }
+            Self::ReadinessClaimSend => {
+                "UPDATE readiness_interactions SET captcha_verified=1,email=?,code_hash=? WHERE ticket_hash=? AND fingerprint=? AND expires_at>? AND consumed=0 AND captcha_verified=0"
+            }
+            Self::ReadinessSent => {
+                "UPDATE readiness_interactions SET code_hash=NULL,captcha_verified=0 WHERE ticket_hash=? AND consumed=0"
+            }
+            Self::ReadinessAttempt => {
+                "UPDATE readiness_interactions SET attempts=attempts+1 WHERE ticket_hash=? AND fingerprint=? AND expires_at>? AND consumed=0 AND attempts<5"
+            }
+            Self::ReadinessConsume => {
+                "UPDATE readiness_interactions SET consumed=1 WHERE ticket_hash=? AND fingerprint=? AND expires_at>? AND consumed=0 AND attempts<=5 AND code_hash=?"
+            }
+            Self::ReadinessHuman => {
+                "UPDATE registration_readiness SET human_verified_at=? WHERE fingerprint=? AND automatic_ok=1"
+            }
             Self::MailSendDraftSubmissionCount => {
                 "SELECT count(*) FROM operations WHERE user_id=? AND kind='send' AND status IN ('pending','unknown','succeeded') AND json_extract(result,'$.emailId')=?"
             }

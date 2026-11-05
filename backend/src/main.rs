@@ -7,6 +7,7 @@ mod installation;
 mod logging;
 mod mail;
 mod policy;
+mod readiness;
 mod registration;
 mod stalwart;
 #[cfg(test)]
@@ -568,6 +569,12 @@ async fn health(State(app): State<Arc<App>>) -> Result<Json<Value>> {
         installation::save_config,
         installation::enroll_operator,
         installation::discovery::discover,
+        readiness::report,
+        readiness::run,
+        readiness::link,
+        readiness::interaction,
+        readiness::send,
+        readiness::verify,
         installation::initialize::authorize_temporary,
         installation::initialize::preflight,
         installation::initialize::start,
@@ -851,6 +858,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     }
     let api = Router::new()
         .merge(registration::routes())
+        .merge(readiness::routes())
         .merge(account::routes())
         .merge(mail::routes())
         .merge(installation::routes())
@@ -873,6 +881,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024))
         .layer(axum::middleware::from_fn(response_policy))
         .with_state(app.clone());
+    tokio::spawn(readiness::worker(app.clone()));
     tokio::spawn(installation::initialize::activate_pending(app));
     let listener = tokio::net::TcpListener::bind(
         std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into()),

@@ -147,7 +147,7 @@ pub(super) async fn status(State(app): State<Arc<App>>) -> Result<Json<Installat
         instance_id: INSTANCE_ID.clone(),
     }))
 }
-async fn authorize(app: &App, headers: &HeaderMap, write: bool) -> Result<()> {
+pub(crate) async fn authorize(app: &App, headers: &HeaderMap, write: bool) -> Result<()> {
     if let Some(candidate) = headers
         .get("authorization")
         .and_then(|h| h.to_str().ok())

@@ -32,10 +32,11 @@ def verified_claim(email, purpose):
     with sqlite3.connect(ROOT / "data/db/mail-web.sqlite") as db:
         db.execute("INSERT INTO verification_challenges(id,email,purpose,code_hash,expires_at) VALUES (?,?,?,?,?)", (challenge.bytes, email, purpose, digest, int(time.time()*1000)+600000))
         policy = json.loads(db.execute("SELECT value FROM platform_settings WHERE key='registration'").fetchone()[0])
+        db.execute("UPDATE registration_readiness SET human_verified_at=?", (int(time.time()*1000),))
         policy["enabled"] = True
         db.execute("UPDATE platform_settings SET value=? WHERE key='registration'", (json.dumps(policy),))
     start()
-    status, result, _ = request(BASE + "/api/v1/registration/verify", "POST", {"challenge_id": str(challenge), "code": code}, {"Origin": BASE})
+    status, result, _ = request(BASE + "/api/v1/registration/verify", "POST", {"challenge_id": str(challenge), "code": code}, {"Origin": "http://mail-web:8080"})
     assert status == 200, ("verify", status, result)
     return {"challenge_id": str(challenge), "verification_token": result["verificationToken"]}
 
@@ -51,7 +52,7 @@ password = secrets.token_hex(24)
 claim = verified_claim(name + "@example.net", "registration")
 payload = {**claim, "name": name, "password": password}
 def register():
-    return request(BASE + "/api/v1/auth/register", "POST", payload, {"Origin": BASE})[0]
+    return request(BASE + "/api/v1/auth/register", "POST", payload, {"Origin": "http://mail-web:8080"})[0]
 with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
     results = list(executor.map(lambda _: register(), range(4)))
 assert 204 in results and set(results) <= {204, 409}, results
@@ -92,17 +93,17 @@ assert all(item["id"] != app_password["id"] for item in actor.api("/account/app-
 new_password = secrets.token_hex(24)
 actor.api("/auth/password", "POST", {"current_password": password, "new_password": new_password}, expected=204)
 actor.api("/account", expected=401)
-assert request(BASE + "/api/v1/auth/login", "POST", {"email": actor.email, "password": password}, {"Origin": BASE})[0] != 204
+assert request(BASE + "/api/v1/auth/login", "POST", {"email": actor.email, "password": password}, {"Origin": "http://mail-web:8080"})[0] != 204
 actor = Actor(actor.email, new_password)
 print("PASS: client credential lifecycle, password change and old session invalidation")
 
 reset_claim = verified_claim(name + "@example.net", "recovery")
 reset_password = secrets.token_hex(24)
-status, _, _ = request(BASE + "/api/v1/auth/recovery", "POST", {**reset_claim, "password": reset_password}, {"Origin": BASE})
+status, _, _ = request(BASE + "/api/v1/auth/recovery", "POST", {**reset_claim, "password": reset_password}, {"Origin": "http://mail-web:8080"})
 assert status == 204, ("recovery", status)
 actor.api("/account", expected=401)
 actor = Actor(actor.email, reset_password)
-assert request(BASE + "/api/v1/auth/recovery", "POST", {**reset_claim, "password": secrets.token_hex(24)}, {"Origin": BASE})[0] == 400
+assert request(BASE + "/api/v1/auth/recovery", "POST", {**reset_claim, "password": secrets.token_hex(24)}, {"Origin": "http://mail-web:8080"})[0] == 400
 print("PASS: external-address recovery claim, single use, real password reset and session invalidation")
 
 jmap = namespace["jmap"]
@@ -123,7 +124,7 @@ with sqlite3.connect(ROOT / "data/db/mail-web.sqlite") as db:
 start()
 resume_payload = {**resume_claim, "name": resume_name, "password": resume_secret}
 for _ in range(2):
-    assert request(BASE + "/api/v1/auth/register", "POST", resume_payload, {"Origin": BASE})[0] == 204
+    assert request(BASE + "/api/v1/auth/register", "POST", resume_payload, {"Origin": "http://mail-web:8080"})[0] == 204
 Actor(resume_name + "@mail.example.com", resume_secret)
 assert len(jmap(service, "x:Account/query", {"filter": {"name": resume_name}})["ids"]) == 1
 print("PASS: lost-create-response durable state resumes the marked mailbox exactly once after restart")
@@ -131,13 +132,13 @@ print("PASS: lost-create-response durable state resumes the marked mailbox exact
 foreign_name = "foreign-" + secrets.token_hex(4)
 foreign_id = upstream_account(foreign_name, "foreign-never-adopt", secrets.token_hex(24))
 foreign_claim = verified_claim(foreign_name + "@example.net", "registration")
-status, result, _ = request(BASE + "/api/v1/auth/register", "POST", {**foreign_claim, "name": foreign_name, "password": secrets.token_hex(24)}, {"Origin": BASE})
+status, result, _ = request(BASE + "/api/v1/auth/register", "POST", {**foreign_claim, "name": foreign_name, "password": secrets.token_hex(24)}, {"Origin": "http://mail-web:8080"})
 assert status == 409 and result["code"] == "upstream_address_exists"
 with namespace["database"]() as db:
     assert db.execute("SELECT count(*) FROM platform_users WHERE email=?", (foreign_name + "@mail.example.com",)).fetchone()[0] == 0
 assert jmap(service, "x:Account/get", {"ids": [foreign_id], "properties": ["id", "description"]})["list"][0]["description"] == "foreign-never-adopt"
 replacement = "replace-" + secrets.token_hex(4)
-assert request(BASE + "/api/v1/auth/register", "POST", {**foreign_claim, "name": replacement, "password": secrets.token_hex(24)}, {"Origin": BASE})[0] == 204
+assert request(BASE + "/api/v1/auth/register", "POST", {**foreign_claim, "name": replacement, "password": secrets.token_hex(24)}, {"Origin": "http://mail-web:8080"})[0] == 204
 print("PASS: foreign mailbox is untouched and its empty reservation does not trap a verified applicant")
 
 outage_name = "outage-" + secrets.token_hex(4)
@@ -145,7 +146,7 @@ outage_claim = verified_claim(outage_name + "@example.net", "registration")
 outage_payload = {**outage_claim, "name": outage_name, "password": secrets.token_hex(24)}
 subprocess.run(["docker", "stop", "mail-web-stalwart-test"], check=True, stdout=subprocess.DEVNULL)
 try:
-    assert request(BASE + "/api/v1/auth/register", "POST", outage_payload, {"Origin": BASE})[0] == 502
+    assert request(BASE + "/api/v1/auth/register", "POST", outage_payload, {"Origin": "http://mail-web:8080"})[0] == 502
 finally:
     subprocess.run(["docker", "start", "mail-web-stalwart-test"], check=True, stdout=subprocess.DEVNULL)
 for _ in range(50):
@@ -160,14 +161,14 @@ with sqlite3.connect(ROOT / "data/db/mail-web.sqlite") as db:
     # Advance only this disposable fixture's lease rather than waiting 3 minutes.
     db.execute("UPDATE platform_users SET provisioning_lease=0 WHERE email=? AND status='provisioning'", (outage_name + "@mail.example.com",))
 start()
-assert request(BASE + "/api/v1/auth/register", "POST", outage_payload, {"Origin": BASE})[0] == 204
+assert request(BASE + "/api/v1/auth/register", "POST", outage_payload, {"Origin": "http://mail-web:8080"})[0] == 204
 assert len(jmap(service, "x:Account/query", {"filter": {"name": outage_name}})["ids"]) == 1
 print("PASS: real upstream outage retains a recoverable reservation across application restart")
 
 failed_reset_claim = verified_claim(name + "@example.net", "recovery")
 subprocess.run(["docker", "stop", "mail-web-stalwart-test"], check=True, stdout=subprocess.DEVNULL)
 try:
-    status, _, _ = request(BASE + "/api/v1/auth/recovery", "POST", {**failed_reset_claim, "password": secrets.token_hex(24)}, {"Origin": BASE})
+    status, _, _ = request(BASE + "/api/v1/auth/recovery", "POST", {**failed_reset_claim, "password": secrets.token_hex(24)}, {"Origin": "http://mail-web:8080"})
     assert status == 502, status
 finally:
     subprocess.run(["docker", "start", "mail-web-stalwart-test"], check=True, stdout=subprocess.DEVNULL)
@@ -179,10 +180,10 @@ for _ in range(50):
         pass
     time.sleep(.2)
 actor.api("/account", expected=401)
-assert request(BASE + "/api/v1/auth/recovery", "POST", {**failed_reset_claim, "password": secrets.token_hex(24)}, {"Origin": BASE})[0] == 400
+assert request(BASE + "/api/v1/auth/recovery", "POST", {**failed_reset_claim, "password": secrets.token_hex(24)}, {"Origin": "http://mail-web:8080"})[0] == 400
 fresh_reset_claim = verified_claim(name + "@example.net", "recovery")
 reset_password = secrets.token_hex(24)
-assert request(BASE + "/api/v1/auth/recovery", "POST", {**fresh_reset_claim, "password": reset_password}, {"Origin": BASE})[0] == 204
+assert request(BASE + "/api/v1/auth/recovery", "POST", {**fresh_reset_claim, "password": reset_password}, {"Origin": "http://mail-web:8080"})[0] == 204
 actor = Actor(actor.email, reset_password)
 print("PASS: recovery outage revokes sessions and requires a fresh verification claim; no password is queued")
 

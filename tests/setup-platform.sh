@@ -25,7 +25,8 @@ sh "$root/deploy/setup-hook.sh"
 mkdir -p "$root/data/db" "$root/data/staging" "$root/logs" "$root/backups"
 test -s "$root/secrets/operator.initial-password" || openssl rand -hex 24 > "$root/secrets/operator.initial-password"
 cat > "$root/app.env" <<EOF
-PUBLIC_ORIGIN=http://127.0.0.1:19190
+PUBLIC_ORIGIN=http://mail-web:8080
+ALLOW_HTTP=true
 MAIL_DOMAIN=mail.example.com
 SITE_NAME=Mail Web
 STALWART_URL=http://mail-web-stalwart-test:8080

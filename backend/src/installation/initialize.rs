@@ -13,7 +13,7 @@ static RUNNING: LazyLock<Mutex<Option<tokio_util::sync::CancellationToken>>> =
     LazyLock::new(Default::default);
 static JOB_LOCK: Mutex<()> = Mutex::const_new(());
 
-pub(super) async fn active(app: &App) -> Result<bool> {
+pub(crate) async fn active(app: &App) -> Result<bool> {
     if RUNNING.lock().await.is_some() {
         return Ok(true);
     }

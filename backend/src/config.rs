@@ -53,7 +53,6 @@ impl Services {
             && !self.turnstile_site_key.is_empty()
             && !self.hook_secret.is_empty()
             && !self.hook_id.is_empty()
-            && self.policy_verified
     }
     pub fn address(&self, name: &str) -> String {
         format!("{name}@{}", self.domain)

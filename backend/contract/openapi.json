@@ -1072,6 +1072,58 @@
         }
       }
     },
+    "/api/v1/installation/readiness": {
+      "get": {
+        "tags": [
+          "readiness"
+        ],
+        "operationId": "report",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "readiness"
+        ],
+        "operationId": "run",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/installation/readiness/link": {
+      "post": {
+        "tags": [
+          "readiness"
+        ],
+        "operationId": "link",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/mailboxes": {
       "get": {
         "tags": [],
@@ -1326,6 +1378,84 @@
           },
           "204": {
             "description": "Completed"
+          }
+        }
+      }
+    },
+    "/api/v1/readiness/send": {
+      "post": {
+        "tags": [
+          "readiness"
+        ],
+        "operationId": "send",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/readiness/session": {
+      "post": {
+        "tags": [
+          "readiness"
+        ],
+        "operationId": "interaction",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/readiness/verify": {
+      "post": {
+        "tags": [
+          "readiness"
+        ],
+        "operationId": "verify",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
           }
         }
       }

@@ -512,7 +512,7 @@ pub(super) async fn get_settings(
 ) -> Result<Json<Value>> {
     operator(&app, &headers, false).await?;
     Ok(Json(
-        json!({"policy":registration::settings(&app).await?,"dependenciesReady":app.services.ready()}),
+        json!({"policy":registration::settings(&app).await?,"dependenciesReady":readiness::ready(&app).await?,"readiness":readiness::view(&app).await?}),
     ))
 }
 #[derive(Deserialize, Serialize, ToSchema)]
@@ -541,7 +541,10 @@ pub(super) async fn put_settings(
     {
         return Err(Error(StatusCode::BAD_REQUEST, "policy_invalid"));
     }
-    if input.enabled && !app.services.ready() {
+    if input.enabled {
+        readiness::check(&app).await?;
+    }
+    if input.enabled && !readiness::ready(&app).await? {
         return Err(Error(
             StatusCode::CONFLICT,
             "registration_dependencies_missing",

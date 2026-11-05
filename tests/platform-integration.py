@@ -51,7 +51,7 @@ def jmap(auth, method, arguments):
 class Actor:
     def __init__(self, email, password):
         self.email, self.password = email, password
-        status, _, headers = request(BASE + "/api/v1/auth/login", "POST", {"email": email, "password": password}, {"Origin": BASE})
+        status, _, headers = request(BASE + "/api/v1/auth/login", "POST", {"email": email, "password": password}, {"Origin": "http://mail-web:8080"})
         assert status == 204, ("login", status)
         cookies = http.cookies.SimpleCookie()
         for header in headers.get_all("Set-Cookie"):
@@ -60,7 +60,7 @@ class Actor:
         self.csrf = cookies["mail_csrf"].value
 
     def api(self, path, method="GET", body=None, expected=200, content_type=None):
-        headers = {"Cookie": self.cookie, "Origin": BASE, "X-CSRF-Token": self.csrf}
+        headers = {"Cookie": self.cookie, "Origin": "http://mail-web:8080", "X-CSRF-Token": self.csrf}
         if content_type:
             headers["Content-Type"] = content_type
         status, data, response_headers = request(BASE + "/api/v1" + path, method, body, headers)

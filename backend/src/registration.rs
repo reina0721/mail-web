@@ -35,7 +35,7 @@ pub(super) async fn public_policy(
 ) -> Result<Json<PublicRegistrationPolicy>> {
     let p = settings(&app).await?;
     Ok(Json(PublicRegistrationPolicy {
-        enabled: p["enabled"] == true && app.services.ready(),
+        enabled: p["enabled"] == true && readiness::ready(&app).await?,
         domain: app.services.domain.clone(),
         brand: app.services.brand.clone(),
         site_key: app.services.turnstile_site_key.clone(),
@@ -70,7 +70,7 @@ fn local_part(input: &str) -> bool {
                 | "mail-web-service"
         )
 }
-async fn captcha(app: &App, token: &str) -> Result<()> {
+pub(crate) async fn captcha(app: &App, token: &str) -> Result<()> {
     if app.services.turnstile_secret.is_empty() {
         return Err(Error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -180,7 +180,7 @@ pub(super) async fn challenge(
     }
     if input.purpose == "registration" {
         let p = settings(&app).await?;
-        if p["enabled"] != true || !app.services.ready() {
+        if p["enabled"] != true || !readiness::ready(&app).await? {
             return Err(Error(StatusCode::FORBIDDEN, "registration_closed"));
         }
     }
@@ -288,7 +288,7 @@ pub(super) async fn register(
 ) -> Result<StatusCode> {
     same_origin(&app, &headers)?;
     let p = settings(&app).await?;
-    if p["enabled"] != true || !app.services.ready() {
+    if p["enabled"] != true || !readiness::ready(&app).await? {
         return Err(Error(StatusCode::FORBIDDEN, "registration_closed"));
     }
     if !local_part(&input.name) || !(12..=128).contains(&input.password.chars().count()) {

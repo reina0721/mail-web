@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 const root=path.resolve(import.meta.dirname,'../backend/src');
 const failures=[];
-for(const name of ['main','account','registration','policy','mail','bootstrap','installation','installation/discovery','installation/initialize','installation/initialize/journal','installation/initialize/provision','installation/initialize/cloudflare']){
+for(const name of ['readiness','main','account','registration','policy','mail','bootstrap','installation','installation/discovery','installation/initialize','installation/initialize/journal','installation/initialize/provision','installation/initialize/cloudflare']){
  const source=fs.readFileSync(path.join(root,name+'.rs'),'utf8').replace(/#\[cfg\(test\)\]\s*mod tests\s*\{[\s\S]*$/,'');
  if(/sqlx::(?:query|query_scalar|query_as|SqlitePool|migrate)\b|\.begin_with\(|\.db\.begin\(/.test(source))failures.push(name);
 }
