@@ -156,6 +156,8 @@ Site Key 用于浏览器；Secret 用于服务端校验，仅加密保存。常�
 
 **验证：** 回调匹配只证明 URL 对应；共享密钥、网络可达性、作用范围及协议限额仍须实际测试。如果部署使用不同的内部回调来源，应先按教程将 Hook 配置为面板显示的来源或完成相应网络安排，再选择；本版本不把任意其他回调当作匹配。
 
+安装器可能已生成本地 `secrets/mta-hook.key`，因此面板会显示共享密钥“已设置”，即使尚未创建远程 Hook。这只代表本地保存了值，不证明两端一致。创建新 Hook 时可以在两端明确填写同一个新随机值，或按自己的密钥管理流程使用该本地文件中的值；不要把“已设置”当作验证成功。探测不会从 Stalwart 找回共享密钥。
+
 **常见错误：** 用容器内 `localhost`、填成 Stalwart 的 `/jmap/`、Bearer 密钥两侧不一致、Hook 仍禁用、误改其他应用的 Hook、缺少 ReloadSettings 权限。敏感认证字段不参与探测返回。
 
 参考：[官方 MTA Hooks](https://stalw.art/docs/mta/filter/mtahooks/)、[MtaHook 对象](https://stalw.art/docs/ref/object/mta-hook/)。

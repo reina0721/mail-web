@@ -3,7 +3,7 @@
   "evidenceScope": {
     "historicalProductionRelease": "v0.1.0-alpha.3",
     "candidateRelease": "v0.2.0-alpha.5",
-    "candidateStatus": "Schema redirect compatibility candidate. Alpha.4 checks passed; alpha.5 adds same-origin versioned-schema redirect handling and exact real Stalwart deep-link assertions. Full acceptance follows CI and live verification."
+    "candidateStatus": "Accepted prerelease: workflow 41956450361 passed build, contracts, 17 backend tests, real isolated Stalwart deep-link discovery and published artifact install/restore. Live CLI update to alpha.5 preserved encrypted configuration and existing operator; registration remains closed."
   },
   "verifiedInIsolatedStalwart101": [
     "Real user credentials, mailbox login and operator isolation",
@@ -43,6 +43,8 @@
     "Real mailbox login, message deep link, operations overview, account drawer and focus return",
     "CLI update from v0.2.0-alpha.1 to v0.2.0-alpha.3 preserved the installation key, configuration, operator mapping and live browser session",
     "Consistent snapshots saved before and after the update; all application bind mounts remain below the selected directory; original seven containers retained their IDs",
-    "Real JMAP text/plain fallback retains paragraphs and literal angle-bracket addresses; standard folders display inbox first"
+    "Real JMAP text/plain fallback retains paragraphs and literal angle-bracket addresses; standard folders display inbox first",
+    "Guided alpha.5 configuration automatically reads saved website origin and secrets-present flags; domain, account, Hook and schema queries succeeded against the existing production Stalwart; advertised domain and API-key deep links verified in the real panel",
+    "Artifact-only CLI update from alpha.4 to alpha.5 preserved the exact encrypted runtime configuration, encryption key and existing session; original seven container IDs unchanged"
   ]
 }
