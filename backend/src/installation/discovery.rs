@@ -89,6 +89,53 @@ fn public_callback(raw: &str) -> String {
     }
 }
 
+fn schema_target(base: &reqwest::Url, location: &str) -> Option<reqwest::Url> {
+    let target = base.join(location).ok()?;
+    (target.origin() == base.origin()
+        && target.username().is_empty()
+        && target.password().is_none()
+        && target.fragment().is_none()
+        && (target.path() == "/api/schema" || target.path().starts_with("/api/schema/")))
+    .then_some(target)
+}
+
+async fn read_schema(upstream: &Stalwart, key: &str) -> Option<Value> {
+    let base = reqwest::Url::parse(&upstream.base).ok()?;
+    let mut target = base.join("/api/schema").ok()?;
+    for _ in 0..3 {
+        let mut response = upstream
+            .http
+            .get(target)
+            .bearer_auth(key)
+            .send()
+            .await
+            .ok()?;
+        if response.status().is_redirection() {
+            target = schema_target(
+                &base,
+                response
+                    .headers()
+                    .get(reqwest::header::LOCATION)?
+                    .to_str()
+                    .ok()?,
+            )?;
+            continue;
+        }
+        if !response.status().is_success() {
+            return None;
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await.ok()? {
+            if bytes.len() + chunk.len() > 4 * 1024 * 1024 {
+                return None;
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        return serde_json::from_slice(&bytes).ok();
+    }
+    None
+}
+
 // Only routes advertised by the actual schema's layout are eligible deep links.
 fn schema_routes(schema: &Value, base: &str) -> Value {
     fn visit(value: &Value, prefix: &str, routes: &mut Vec<String>) {
@@ -222,35 +269,40 @@ pub(crate) async fn discover(
         Err(error) => (Vec::new(),section_error(error)),
     };
     // Schema is optional, capped and never returned (it may contain unrelated settings).
-    let schema = async {
-        let mut response = upstream
-            .http
-            .get(format!("{base}/api/schema"))
-            .bearer_auth(&key)
-            .send()
-            .await
-            .ok()?;
-        if !response.status().is_success() {
-            return None;
-        }
-        let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await.ok()? {
-            if bytes.len() + chunk.len() > 4 * 1024 * 1024 {
-                return None;
-            }
-            bytes.extend_from_slice(&chunk);
-        }
-        serde_json::from_slice::<Value>(&bytes).ok()
-    }
-    .await;
+    let schema = read_schema(&upstream, &key).await;
+    let schema_status = if schema.is_some() {
+        "ready"
+    } else {
+        "request_failed"
+    };
     Ok(Json(
-        json!({"stalwartUrl":base,"documentationUrl":documentation_url(),"domains":domains,"accounts":accounts,"hooks":hooks,"links":schema_routes(&schema.unwrap_or(Value::Null),&base),"sections":{"domains":"ready","accounts":account_status,"hooks":hook_status},"callbackUrl":callback,"persisted":false}),
+        json!({"stalwartUrl":base,"documentationUrl":documentation_url(),"domains":domains,"accounts":accounts,"hooks":hooks,"links":schema_routes(&schema.unwrap_or(Value::Null),&base),"sections":{"domains":"ready","accounts":account_status,"hooks":hook_status,"schema":schema_status},"callbackUrl":callback,"persisted":false}),
     ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn schema_redirects_never_forward_credentials_to_a_different_origin_or_resource() {
+        let base = reqwest::Url::parse("https://mail.example.com:8443").unwrap();
+        assert_eq!(
+            schema_target(&base, "/api/schema/version")
+                .unwrap()
+                .as_str(),
+            "https://mail.example.com:8443/api/schema/version"
+        );
+        for rejected in [
+            "https://attacker.example/api/schema/v",
+            "https://mail.example.com/api/schema/v",
+            "/admin/",
+            "/api/schema/../../admin/",
+            "https://name:key@mail.example.com:8443/api/schema/v",
+            "//attacker.example/api/schema/v",
+        ] {
+            assert!(schema_target(&base, rejected).is_none());
+        }
+    }
     #[test]
     fn callback_metadata_never_returns_embedded_credentials() {
         assert_eq!(

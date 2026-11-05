@@ -1,4 +1,4 @@
-Mail Web v0.2.0-alpha.4
+Mail Web v0.2.0-alpha.5
 
 Adds a guided Stalwart setup panel with automatic existing-configuration loading, field-specific GitHub tutorials and schema-derived administration links. Protected read-only discovery lists domains, ordinary mailbox candidates and callback-matched Hooks without creating objects, saving configuration or returning credentials. Changing the upstream requires a newly supplied directory key. Registration prerequisites and protocol acceptance are displayed separately. See docs/stalwart-setup.md for both existing-mailbox and public-registration walkthroughs.
 

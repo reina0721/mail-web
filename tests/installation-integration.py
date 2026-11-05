@@ -85,6 +85,11 @@ try:
     assert request("/installation/discover", "POST", probe, capability, "https://attacker.example")[0] == 403
     code, found = request("/installation/discover", "POST", probe, capability)
     assert code == 200, (code, found)
+    assert found["sections"]["schema"] == "ready", found["sections"]
+    assert found["links"]["domains"] == settings["stalwartUrl"] + "/admin/Management/x:Domain"
+    assert found["links"]["accounts"] == settings["stalwartUrl"] + "/admin/Management/x:Account/User"
+    assert found["links"]["hooks"] == settings["stalwartUrl"] + "/admin/Settings/x:MtaHook"
+    assert found["links"]["keys"] == settings["stalwartUrl"] + "/account/Account/x:ApiKey"
     assert found["persisted"] is False and found["sections"]["accounts"] == "ready"
     assert any(d["name"] == "mail.example.com" for d in found["domains"])
     assert any(a["email"] == "operator-v2@mail.example.com" for a in found["accounts"])

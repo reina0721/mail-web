@@ -2,8 +2,8 @@
   "readyForPublicRegistration": false,
   "evidenceScope": {
     "historicalProductionRelease": "v0.1.0-alpha.3",
-    "candidateRelease": "v0.2.0-alpha.4",
-    "candidateStatus": "Guided setup and read-only discovery candidate; local frontend production build, type and architecture checks passed. Linux integration and published-release acceptance will be recorded after execution. Existing production evidence remains scoped to alpha.3."
+    "candidateRelease": "v0.2.0-alpha.5",
+    "candidateStatus": "Schema redirect compatibility candidate. Alpha.4 checks passed; alpha.5 adds same-origin versioned-schema redirect handling and exact real Stalwart deep-link assertions. Full acceptance follows CI and live verification."
   },
   "verifiedInIsolatedStalwart101": [
     "Real user credentials, mailbox login and operator isolation",
