@@ -56,3 +56,16 @@ The above covers presentation and frontend interactions against API-shaped fixtu
 - Regression found during resizing: a stored split-reading preference let the desktop reader-hide rule win on mobile, hiding both panes after opening mail. The mobile composition now explicitly reveals the reader when a message is active. Rechecked with is-split at 390×844, then returned to the list with its entry control.
 
 - Final operations checks: lin@example.com quota saved as 2049 MiB and was reflected in the table; reopening showed the saved value. Disable confirmation explained session/protocol impact; cancel retained the account. Registration remained disabled while dependency readiness was false. Task retry reported the returned queued count. Operations at all four target widths had no horizontal overflow; mobile used summary cards.
+
+## Multiple connections and account pages (2026-11-05)
+
+- Checked configured setup at 1440×900, 1024×768 and 390×844. Existing sites show site settings and connection management; the first-install form and duplicate readiness card are collapsed. Source selection shows its bound domains, and each domain links to its scoped policy. No document horizontal overflow.
+- Account content measures 820px on desktop/tablet, with one independent scrolling host. Removed the former duplicate account-page wrapper and the irrelevant mobile folder control. Mobile stays one column with visible controls.
+- Changing appearance and refreshing devices retain an unsaved display name. Profile and appearance save independently; saving appearance does not persist the draft name. Optional application-password failure leaves profile, appearance and devices usable with retry. Capacity is unavailable when its own request fails.
+- Connection advanced inputs warn before switching sources; cancelling retains the entered value, cancelling edits restores saved values. Parent setup navigation also tracks these drafts. Domain-policy switching similarly protects unsaved changes; cancel and save behave independently per domain.
+- Shared HeroUI switch checked/unchecked, disabled and keyboard focus states were inspected in light/dark samples and live fixture operations. Space toggles; Tab continues to the next field. Track/thumb geometry remains owned by HeroUI rather than a second set of offsets.
+- Login, domain registration and recovery were inspected on mobile. Domain choice distinguishes closed/unready states and clears stale challenges. No CAPTCHA was solved and no production email was sent by UI automation.
+- Reduced-motion sample was actually operated: content animation-name none, transition-duration 0s and opacity 1. The existing system media-query policy remains in place.
+- A deliberately delayed pre-authorization 401 response (3s) could not overwrite the newer authorized setup read after the load-generation fix. Connections remained available with no stale expired-login alert.
+
+These are browser example-preview results, not proof of new production connections, public signup, device hardware coverage or screen-reader speech. Real deployment results are recorded separately in acceptance.json.

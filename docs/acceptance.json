@@ -3,8 +3,11 @@
   "evidenceScope": {
     "historicalProductionRelease": "v0.1.0-alpha.3",
     "candidateRelease": "v0.3.0-alpha.2",
-    "candidateStatus": "Alpha.1 passed dual-real-Stalwart and published-asset regression and was deployed with configuration, account, counters and existing human receipts preserved. Alpha.2 additionally guards setup reads against stale pre-authorization responses; final UI verification and its release workflow are in progress.",
-    "previousReleaseValidation": "https://github.com/reina0721/mail-web/actions/runs/42095434469"
+    "candidateStatus": "Full dual-real-Stalwart, identity, SMTP/JMAP, migration, type/build/boundary and published-asset install/restore checks passed. Artifact-only CLI update completed on the existing webmail1 installation. Original configuration, local account, limits, counters and human verification receipts are preserved; requested and effective registration remain enabled. Production still has only its original connection and domain.",
+    "previousReleaseValidation": "https://github.com/reina0721/mail-web/actions/runs/42095434469",
+    "currentProductionRelease": "v0.3.0-alpha.2",
+    "releaseValidation": "https://github.com/reina0721/mail-web/actions/runs/42097795715",
+    "releaseGateScope": "readyForPublicRegistration is the stable-release promotion gate, not the runtime domain registration switch."
   },
   "verifiedInIsolatedStalwart101": [
     "Real user credentials, mailbox login and operator isolation",
@@ -13,13 +16,17 @@
     "Submission outage fails closed; external incoming remains accepted",
     "Concurrent registration with verified claims and idempotent retry",
     "Password change, single-use recovery claims and device revocation",
-    "26 backend tests, 8 frontend/CLI tests, frontend production build and 20 architecture fixtures",
+    "29 backend tests, 8 frontend/CLI tests, frontend production build and 20 architecture fixtures",
     "Concurrent identical sends and lost-response reconciliation produce one submission",
     "HTML-only reply text, active content removal and submitted-draft editing guard",
     "Client credentials cannot create access keys; mail-only accounts cannot use Sieve/vacation",
     "20MiB streamed upload accepted, one-byte and aggregate overflow rejected; staging cleaned",
     "Browser draft save/refresh/reopen and keyboard activation; mobile dark preference restored after reload",
-    "20MiB attachment submitted through the platform and accepted by Stalwart"
+    "20MiB attachment submitted through the platform and accepted by Stalwart",
+    "Two real Stalwart servers with equal remote IDs and names: scoped auto-initialization, local-enrollment login, session/mail/draft/attachment/quota isolation",
+    "Per-domain policy/readiness, same-server domain binding, no second operator or mutation of the first server",
+    "Second-server real JMAP/SMTP share its own durable recipient count; its outage leaves the first server usable",
+    "Partial profile and appearance saves retain the other section; populated source migration is rejected"
   ],
   "verifiedInProduction": [
     "GitHub Release checksum verification, Docker load and local-only Compose startup",
@@ -37,7 +44,7 @@
     "Broader screen-reader and browser/device accessibility coverage",
     "Public-origin signup including an actual Turnstile token and externally delivered verification code",
     "This update reused the existing Turnstile Widget; production widget creation and API-token validation were not repeated",
-    "Ordinary operator sign-in was not retested in alpha.10; real screenshots use the installation capability, and no password reset was performed"
+    "Ordinary operator sign-in was not retested during the alpha.2 update; actual setup screenshots use the installation capability, with no password reset"
   ],
   "verifiedInGenericDeployment": [
     "Fresh artifact-only installation in a user-selected directory, custom container name and explicit IP/port binding",
@@ -54,6 +61,18 @@
     "Artifact-only CLI update from alpha.6 to alpha.10 preserved the exact encrypted runtime configuration, encryption key, existing account mapping, registration policy and outbound counters; matching before/after consistent snapshots verified and all seven SQLite migrations succeeded",
     "All seven production automatic readiness items passed using saved runtime credentials: configuration, directory permissions, domain, sender JMAP identity/mailboxes, dedicated Hook configuration/scope, callback authentication and Turnstile configuration. Human verification and external receipt have not been claimed. Registration requested/effective states both remain false",
     "Original seven other containers retained their IDs. No test accounts or domains were created, no existing mailbox limits or other applications’ Hooks were modified, and no production outage test was performed",
-    "Actual alpha.10 setup/readiness panel inspected at 1440x900 and 390x844 using the protected installation capability, with no horizontal overflow and visible keyboard focus; isolated operations UI additionally checked at 1024x768, in light/dark themes, with slow checks, failures, manual enablement and dependency-paused state"
-  ]
+    "Actual alpha.10 setup/readiness panel inspected at 1440x900 and 390x844 using the protected installation capability, with no horizontal overflow and visible keyboard focus; isolated operations UI additionally checked at 1024x768, in light/dark themes, with slow checks, failures, manual enablement and dependency-paused state",
+    "Artifact-only update to v0.3.0-alpha.2 preserves exact encrypted runtime configuration, encryption key, existing local account/limits, outbound counters and existing human receipts; all eight migrations succeed",
+    "Original connection/domain receive immutable default ownership; no extra production connection, test account or domain is created. Other containers retain their IDs",
+    "Seven actual automatic readiness checks pass after update; existing requested/effective registration remain enabled. Existing human receipt is retained rather than redone by automation",
+    "Actual alpha.2 protected connection/readiness panel reloaded and inspected at 1440x900: saved origin/brand/default connection and passed human receipt visible, no stale expired-login alert. Actual public login inspected at 390x844 with no horizontal overflow"
+  ],
+  "currentProductionRegistration": {
+    "requestedEnabled": true,
+    "effectiveEnabled": true,
+    "automaticChecksPassed": 7,
+    "existingHumanReceiptPreserved": true,
+    "connections": 1,
+    "domains": 1
+  }
 }

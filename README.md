@@ -164,9 +164,10 @@ sh "$INSTALL_DIR/deploy/mail-web.sh" restore "$INSTALL_DIR/backups/SNAPSHOT"
 | 相对路径 | 内容 |
 |---|---|
 | `.env` | 镜像版本、容器名、监听和其他基础设施选项 |
-| `config/runtime.enc` | 加密的站点与 Stalwart 配置 |
+| `config/runtime.enc` | 加密的站点与默认 Stalwart 连接配置 |
+| `config/initialization*.enc` | 按连接分开的加密初始化进度与生成凭据；不包含临时管理员授权 |
 | `config/installed-release.json` | 已安装产物的版本、架构和镜像标识 |
-| `data/db` | SQLite、WAL 与 SHM |
+| `data/db` | SQLite、WAL 与 SHM；包括额外连接的加密运行配置、域名策略与就绪记录 |
 | `data/staging` | 附件暂存 |
 | `secrets` | 安装管理令牌、加密密钥及可选服务密钥 |
 | `logs` | 应用轮转日志 |

@@ -186,6 +186,8 @@ Site Key 用于浏览器；Secret 用于服务端校验，仅加密保存。常�
 
 **用途：** 让 SMTP、原生 JMAP 与 Webmail 的外部收件人数限额在同一策略下执行。公开注册开放前需要完成配置与协议验收。
 
+以下旧式 `/internal/mta-hook` 回调仅属于默认连接。额外连接使用 `/internal/mta-hook/{serviceId}`，其中 `serviceId` 是本 Webmail 的不可变连接 ID；自动初始化会填写正确地址。高级排错应核对该连接已经生成的 Hook，不能把其他连接或其他应用的 Hook 改成默认回调。外部收件人按实际发件账号所属域名判断，不按连接中域名的排序判断。
+
 1. 以 Stalwart 管理员进入 **Settings → MTA → Filters → MTA Hooks**，创建一个只属于此 Webmail 的 Hook；不要编辑或复用其他应用的 Hook。
 2. 回调 URL 填入本 Webmail 的 `/internal/mta-hook`。例如正式来源是 `https://webmail.example.com`，则为 `https://webmail.example.com/internal/mta-hook`。从 Stalwart 所在容器验证该回调可达；`localhost` 指 Stalwart 自己的容器，不能用来指代另一个容器。
 3. 为 Hook 的 HTTP 认证选择 Bearer，设置独立的强随机共享密钥。把同一个值填入本面板“MTA Hook 共享密钥”；它不是目录 API 密钥、Hook ID 或安装令牌。

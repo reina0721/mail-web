@@ -28,8 +28,10 @@ and do not hold transactions across upstream requests.
 
 The release check also validates Rust formatting, Clippy, unit tests, generated
 OpenAPI/client consistency, frontend type checking/static export and inherited
-frontend boundary fixtures. Public registration remains closed until all
-remaining checks in `acceptance.json` are complete.
+frontend boundary fixtures. Public registration is controlled per domain by
+the saved requested policy and deployment readiness, including real human and
+mail-receipt checks. Release-wide acceptance and remaining coverage are recorded
+separately; they do not restore the removed manual-attestation gate.
 
 ## Production observations
 
@@ -167,3 +169,17 @@ Cloudflare transport tests verify managed-widget request shape, returned Site Ke
 The published alpha.6 package passed clean/repeated installation and backup/restore rehearsal. The existing webmail1 deployment then upgraded using its CLI, checksum-verified release assets and Docker load. The container is healthy. Its encrypted runtime configuration exactly matches the pre-update snapshot; consistent SQLite snapshots before and after show identical platform-user mappings. All seven unrelated container IDs and selected-directory application mounts are retained.
 
 Real desktop/mobile panel screenshots use the installation capability through the SSH management helper, not preview fixtures or ordinary-mailbox sign-in. The historical local operator credential handoff did not authenticate before the update; no reset was attempted. The panel read back the real brand, Stalwart/mailbox origins and site address. No production administrative authorization was supplied, and no remote production identity, key, Hook or Turnstile Widget was created during UI verification. Registration remains closed and protocol/public-origin acceptance is separate.
+
+## Multi-Stalwart regression (2026-11-05)
+
+The complete [alpha.1 workflow](https://github.com/reina0721/mail-web/actions/runs/42095434469) passed, including published-asset installation and restore. tests/connections-integration.py starts a second disposable Stalwart 1.0.1 and a separate disposable Webmail installation. It exercises temporary scoped administrator authorization, independent auto-configuration, duplicate-source rejection and reuse of the existing operator without restarting the first connection.
+
+Both real servers allocate the same remote account ID and use the same local name under different domains. Authentication of an unenrolled upstream user is rejected. After fixture-only local enrollment, real sessions, mailbox reads, draft/attachment round-trips, capacity, account policy updates and self-service capabilities stay on their mapped server. Partial profile/appearance saves preserve the other section. Attempts to move populated sources are rejected before contacting a different origin.
+
+An additional bound domain reuses the owned runtime credentials and Hook. Domain readiness and policy are separate. The test seeds human verification only in the stopped disposable database; automatic checks remain real, and this fixture is not claimed as Internet receipt or Turnstile acceptance. Real Webmail/JMAP and SMTP on the second server share its durable recipient count and reject the third recipient at the configured hourly limit; the first source's counter stays unchanged. Stopping only the second disposable server leaves the first usable. Production is never an endpoint for this helper.
+
+The SQLite upgrade fixture retains legacy IDs, roles, quotas, encrypted sessions, pending revocations and counters while adding default ownership and service-scoped remote-ID/event uniqueness. Foreign keys are restored and checked before requests are accepted.
+
+The final [alpha.2 workflow](https://github.com/reina0721/mail-web/actions/runs/42097795715) reran the complete checks and install/restore acceptance successfully. Its frontend additionally prevents pre-authorization requests from overriding a newer successful setup read; the intentionally delayed browser fixture and the actual updated panel both passed.
+
+Production Webmail was updated at its existing /root/workapps/webmail installation through the release CLI. The original pre-feature snapshot 20261105T194502Z-909937 and final snapshot 20261105T195851Z-917246 have identical encrypted runtime configuration, encryption key, local account mapping/limits, outbound events and human receipt records. All eight migrations succeeded. The existing one connection/domain remains the only production connection/domain; requested and effective registration remain enabled, and seven automatic checks pass. Other containers retain their prior IDs. No production test account/domain, mailbox-limit change, Hook takeover or outage experiment was used. Actual setup screenshots use the installation capability; ordinary operator sign-in was not retested.
