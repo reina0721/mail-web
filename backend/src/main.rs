@@ -872,7 +872,8 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         )
         .layer(axum::extract::DefaultBodyLimit::max(32 * 1024 * 1024))
         .layer(axum::middleware::from_fn(response_policy))
-        .with_state(app);
+        .with_state(app.clone());
+    tokio::spawn(installation::initialize::activate_pending(app));
     let listener = tokio::net::TcpListener::bind(
         std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into()),
     )

@@ -1,6 +1,12 @@
 use super::*;
 
 pub(super) async fn validate(app: &App, access: &Grant, spec: &Spec) -> Result<()> {
+    if !access.missing_permissions(spec.create_domain).is_empty() {
+        return Err(Error(
+            StatusCode::FORBIDDEN,
+            "initialization_permissions_missing",
+        ));
+    }
     if spec.brand.trim().is_empty()
         || spec.brand.len() > 80
         || !valid_domain(&spec.domain)
@@ -10,7 +16,7 @@ pub(super) async fn validate(app: &App, access: &Grant, spec: &Spec) -> Result<(
     }
     if configured(app)
         && app.services.domain != spec.domain
-        && db::scalar(db::Statement::InstallationUserCount)
+        && db::scalar::<i64>(db::Statement::InstallationUserCount)
             .fetch_one(&app.db)
             .await?
             > 0
@@ -20,7 +26,7 @@ pub(super) async fn validate(app: &App, access: &Grant, spec: &Spec) -> Result<(
     // A source change is not an account/data migration.
     if configured(app)
         && app.upstream.base != access.base
-        && db::scalar(db::Statement::InstallationUserCount)
+        && db::scalar::<i64>(db::Statement::InstallationUserCount)
             .fetch_one(&app.db)
             .await?
             > 0
@@ -48,7 +54,7 @@ pub(super) async fn validate(app: &App, access: &Grant, spec: &Spec) -> Result<(
     if !spec.cloudflare_account.is_empty() {
         cloudflare::validate(app, &access.cloudflare_token, &spec.cloudflare_account).await?;
     }
-    if db::scalar(db::Statement::InstallationOperatorCount)
+    if db::scalar::<i64>(db::Statement::InstallationOperatorCount)
         .fetch_one(&app.db)
         .await?
         == 0
@@ -320,7 +326,7 @@ async fn hook(app: &App, job: &mut Job, access: &Grant) -> Result<()> {
     journal::write(app, job)
 }
 async fn operator(app: &App, job: &mut Job, access: &Grant, runtime: &App) -> Result<()> {
-    if db::scalar(db::Statement::InstallationOperatorCount)
+    if db::scalar::<i64>(db::Statement::InstallationOperatorCount)
         .fetch_one(&app.db)
         .await?
         > 0
@@ -451,12 +457,21 @@ pub(super) async fn run(
     checkpoint(app, job, cancel, "operator").await?;
     operator(app, job, access, &runtime).await?;
     checkpoint(app, job, cancel, "scope").await?;
-    policy::sync_scope(&runtime).await?;
+    // Scope activation is deferred until restart and callback authentication.
     checkpoint(app, job, cancel, "verify").await?;
     runtime.upstream.session(&services.provisioning_key).await?;
     runtime.upstream.session(&services.notification_key).await?;
     checkpoint(app, job, cancel, "apply").await?;
     let _configuration = CONFIG_LOCK.lock().await;
+    if !job.secrets.contains_key("previous-config")
+        && let Some(previous) = load(&app.vault).map_err(|_| internal("initialization_read"))?
+    {
+        job.secrets.insert(
+            "previous-config".into(),
+            serde_json::to_string(&previous).map_err(|_| internal("initialization_encode"))?,
+        );
+        journal::write(app, job)?;
+    }
     persist(
         &app.vault,
         &RuntimeConfig {
@@ -480,7 +495,7 @@ pub(super) async fn run(
     .into_iter()
     .map(str::to_owned)
     .collect();
-    job.step = "completed".into();
+    job.step = "apply".into();
     Ok(())
 }
 
