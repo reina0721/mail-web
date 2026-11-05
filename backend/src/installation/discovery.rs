@@ -124,6 +124,9 @@ async fn read_schema(upstream: &Stalwart, key: &str) -> Option<Value> {
         if !response.status().is_success() {
             return None;
         }
+        // Stalwart always gzip-encodes schema responses, including when the
+        // client did not request compression. Reqwest decodes the stream, so
+        // this limit applies to expanded JSON rather than compressed bytes.
         let mut bytes = Vec::new();
         while let Some(chunk) = response.chunk().await.ok()? {
             if bytes.len() + chunk.len() > 4 * 1024 * 1024 {
