@@ -61,11 +61,11 @@
 .installation-shell h1{font-size:26px;font-weight:650;margin:8px 0}
 .installation-shell h2{font-size:16px;font-weight:600}
 .installation-shell header{margin-bottom:24px}
-.installation-access,.installation-form,.installation-card{display:grid;gap:20px;min-width:0}
+.installation-access,.installation-form,.installation-card{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;min-width:0}
 .installation-access{grid-template-columns:minmax(0,1fr) auto;align-items:center;margin:24px 0}
 .installation-card{padding:24px;border:1px solid var(--ds-border);border-radius:var(--ds-radius-dialog);background:var(--ds-surface)}
 .installation-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
-.installation-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px}
+.installation-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:12px}
 .installation-actions>a{margin-right:auto;color:var(--ds-brand)}
 .installation-feedback{min-height:48px;padding:16px 0;color:var(--ds-ink-muted)}
 .installation-feedback[role='alert']{color:var(--ds-danger)}

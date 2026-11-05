@@ -36,7 +36,7 @@ http.createServer(async(req,res)=>{try{
    const labels={configuration:'运行凭据和网站来源',directory:'目录服务与账号管理权限',domain:'已配置的邮箱域名',sender:'发件权限与真实发件身份',hook:'专用 Hook 配置与账号作用范围',callback:'网站回调认证（不代表协议实测）',turnstile:'Turnstile 配置（真实验证在下一步）'};
    const items=Object.entries(labels).map(([id,label])=>({id,label,status:mode.readinessFailure===id?'failed':'passed',reason:mode.readinessFailure===id?'callback_unreachable':null}));
    const ready=!mode.readinessFailure&&!!mode.readinessHuman;
-   return json(res,{ready,items,requestedEnabled:policy.enabled,effectiveEnabled:policy.enabled&&ready,checkedAt:Date.now(),humanVerifiedAt:mode.readinessHuman?Date.now():0,releaseVersion:'0.2.0-alpha.8',protocolScope:'示例预览：未执行生产停机或协议压力测试'});
+   return json(res,{ready,items,requestedEnabled:policy.enabled,effectiveEnabled:policy.enabled&&ready,checkedAt:Date.now(),humanVerifiedAt:mode.readinessHuman?Date.now():0,releaseVersion:'0.2.0-alpha.9',protocolScope:'示例预览：未执行生产停机或协议压力测试'});
   }
   if(key==='/installation/readiness/link')return json(res,{url:setup.publicOrigin+'/setup/check/#check=isolated-preview-only',expiresInSeconds:600});
   if(key==='/installation/initialize/authorize'){

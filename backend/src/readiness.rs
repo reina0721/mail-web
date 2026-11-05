@@ -600,7 +600,10 @@ pub(crate) async fn readiness_verify(
         .rows_affected()
         != 1
     {
-        return Err(Error(StatusCode::BAD_REQUEST, "code_invalid"));
+        return Err(Error(
+            StatusCode::BAD_REQUEST,
+            "readiness_attempts_exhausted",
+        ));
     }
     let digest = hash(&format!(
         "readiness:{}:{}:{}",
