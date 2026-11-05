@@ -2,9 +2,9 @@
   "readyForPublicRegistration": false,
   "evidenceScope": {
     "historicalProductionRelease": "v0.1.0-alpha.3",
-    "candidateRelease": "v0.3.0-alpha.1",
-    "candidateStatus": "Implementation candidate. Local checks are in progress; dual-real-Stalwart regression, published release validation and production update have not yet completed. Existing production policy and human receipts must be preserved.",
-    "previousReleaseValidation": "https://github.com/reina0721/mail-web/actions/runs/42063599660"
+    "candidateRelease": "v0.3.0-alpha.2",
+    "candidateStatus": "Alpha.1 passed dual-real-Stalwart and published-asset regression and was deployed with configuration, account, counters and existing human receipts preserved. Alpha.2 additionally guards setup reads against stale pre-authorization responses; final UI verification and its release workflow are in progress.",
+    "previousReleaseValidation": "https://github.com/reina0721/mail-web/actions/runs/42095434469"
   },
   "verifiedInIsolatedStalwart101": [
     "Real user credentials, mailbox login and operator isolation",

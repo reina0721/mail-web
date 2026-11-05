@@ -43,6 +43,7 @@ http.createServer(async(req,res)=>{try{
    return json(res,{job:connectionJobs.get(serviceId)??null});
   }
   if(key==='/installation')return json(res,{configured:mode.setupConfigured,needsOperator:mode.setupNeedsOperator,brand:setup.brand,domain:mode.setupConfigured?setup.domain:'',version:'preview',instanceId:'isolated-preview-'+mode.setupEpoch});
+  if(mode.setupRequireAuth&&key.startsWith('/installation/')&&!req.headers.authorization){await new Promise(resolve=>setTimeout(resolve,3000));return json(res,{code:'unauthorized'},401);}
   if(key==='/registration/domains')return json(res,{items:bindings.map(d=>({id:d.id,domain:d.name,enabled:policies.get(d.id)?.enabled,dependenciesReady:!!mode.readinessHuman}))});
   if(key==='/registration/policy')return json(res,{...domainPolicy,brand:setup.brand,siteKey:'',domain:bindings.find(d=>d.id===domainId)?.name??'example.com'});
   if(mode.expired)return json(res,{code:'unauthorized'},401);
@@ -52,7 +53,7 @@ http.createServer(async(req,res)=>{try{
    const labels={configuration:'运行凭据和网站来源',directory:'目录服务与账号管理权限',domain:'已配置的邮箱域名',sender:'发件权限与真实发件身份',hook:'专用 Hook 配置与账号作用范围',callback:'网站回调认证（不代表协议实测）',turnstile:'Turnstile 配置（真实验证在下一步）'};
    const items=Object.entries(labels).map(([id,label])=>({id,label,status:mode.readinessFailure===id?'failed':'passed',reason:mode.readinessFailure===id?'callback_unreachable':null}));
    const ready=!mode.readinessFailure&&!!mode.readinessHuman;
-   return json(res,{ready,items,serviceId:bindings.find(d=>d.id===domainId)?.serviceId??'default',domainId,requestedEnabled:domainPolicy.enabled,effectiveEnabled:domainPolicy.enabled&&ready,checkedAt:Date.now(),humanVerifiedAt:mode.readinessHuman?Date.now():0,releaseVersion:'0.3.0-alpha.1',protocolScope:'示例预览：未执行真实服务验收'});
+   return json(res,{ready,items,serviceId:bindings.find(d=>d.id===domainId)?.serviceId??'default',domainId,requestedEnabled:domainPolicy.enabled,effectiveEnabled:domainPolicy.enabled&&ready,checkedAt:Date.now(),humanVerifiedAt:mode.readinessHuman?Date.now():0,releaseVersion:'0.3.0-alpha.2',protocolScope:'示例预览：未执行真实服务验收'});
   }
   if(key==='/installation/readiness/link')return json(res,{url:setup.publicOrigin+'/setup/check/#check=isolated-preview-only',expiresInSeconds:600});
   if(key==='/installation/initialize/authorize'){

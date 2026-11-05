@@ -30,12 +30,24 @@ export function Installation({initialStatus}:{initialStatus?:Status}){
  const change=(key:keyof Spec,value:string|boolean)=>{setSpec(s=>({...s,[key]:value}));setDirty(true);setPreview(null);};
  const clearSecrets=()=>{setPassword('');setApiKey('');setCfToken('');setOperatorPassword('');setTicket('');};
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;generation.current++;};},[]);
- async function load(){setPending(true);setError('');try{const current=initialStatus??await api<Status>('/installation');setStatus(current);
-  const prior=await api<{job:Job|null}>('/installation/initialize/job',{headers:auth()});
-  if(prior.job){setJob(prior.job);setSpec(prior.job.spec);setBase(prior.job.base);}
-  if(current.configured){const value=await api<{settings:{brand:string;domain:string;publicOrigin:string;stalwartUrl:string}}>('/installation/config',{headers:auth()});setBase(value.settings.stalwartUrl);setSite({brand:value.settings.brand,origin:value.settings.publicOrigin});if(!prior.job)setSpec(s=>({...s,brand:value.settings.brand,domain:value.settings.domain,publicOrigin:value.settings.publicOrigin}));}
-  else setSpec(s=>({...s,publicOrigin:s.publicOrigin||origin}));setLoaded(true);
- }catch(e){setError(errorMessage(e));setLoaded(false);}finally{setPending(false);}}
+ async function load(){
+  const at=++generation.current,active=()=>alive.current&&at===generation.current;
+  setPending(true);setError('');
+  try{
+   const current=initialStatus??await api<Status>('/installation');
+   if(!active())return;
+   const prior=await api<{job:Job|null}>('/installation/initialize/job',{headers:auth()});
+   if(!active())return;
+   const value=current.configured?await api<{settings:{brand:string;domain:string;publicOrigin:string;stalwartUrl:string}}>('/installation/config',{headers:auth()}):null;
+   if(!active())return;
+   setStatus(current);setJob(prior.job);
+   if(prior.job){setSpec(prior.job.spec);setBase(prior.job.base);}
+   if(value){setBase(value.settings.stalwartUrl);setSite({brand:value.settings.brand,origin:value.settings.publicOrigin});if(!prior.job)setSpec(s=>({...s,brand:value.settings.brand,domain:value.settings.domain,publicOrigin:value.settings.publicOrigin}));}
+   else setSpec(s=>({...s,publicOrigin:s.publicOrigin||origin}));
+   setError('');setLoaded(true);
+  }catch(e){if(active()){setError(errorMessage(e));setLoaded(false);}}
+  finally{if(active())setPending(false);}
+ }
  useEffect(()=>{if(origin)void load();},[origin,token]);
  useEffect(()=>{if(!job||!['running','applying'].includes(job.status))return;let active=true;const timer=setInterval(()=>{void api<{job:Job}>('/installation/initialize/job',{headers:auth()}).then(value=>{if(active){setJob(value.job);if(!['running','applying'].includes(value.job.status)){clearSecrets();setDirty(false);}}}).catch(e=>{if(active)setError(errorMessage(e));});},1000);return()=>{active=false;clearInterval(timer);};},[job?.status,token]);
  useEffect(()=>{if(job?.status!=='completed')return;let active=true;const timer=setInterval(()=>{void api<Status>('/installation').then(current=>{if(active&&current.configured){setApplied(true);setStatus(current);}}).catch(()=>{});},1500);return()=>{active=false;clearInterval(timer);};},[job?.status]);

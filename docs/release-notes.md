@@ -1,4 +1,4 @@
-Mail Web v0.3.0-alpha.1
+Mail Web v0.3.0-alpha.2
 
 Adds multiple Stalwart connections and domain-specific operations. Existing locally enrolled mailbox login is retained: adding an upstream never imports or grants access to its users. Local account mappings select the single upstream for sessions, messages, drafts, attachments, credentials, reconciliation, Hooks and recipient counters.
 
