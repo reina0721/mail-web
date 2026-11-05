@@ -248,12 +248,19 @@ async fn service(
                 )
                 .await?;
         }
+        let key_permissions = if kind == "directory" {
+            let mut enabled = permissions["enabledPermissions"].clone();
+            enabled["authenticate"] = json!(true);
+            json!({"@type":"Replace","enabledPermissions":enabled})
+        } else {
+            json!({"@type":"Replace","enabledPermissions":{"authenticate":true,"emailSend":true,"jmapMailboxGet":true,"jmapEmailCreate":true,"jmapIdentityGet":true,"jmapEmailSubmissionCreate":true}})
+        };
         let value = upstream
             .password_call(
                 &email,
                 &password,
                 "x:ApiKey/set",
-                json!({"create":{"key":{"description":marker,"permissions":{"@type":"Inherit"}}}}),
+                json!({"create":{"key":{"description":marker,"permissions":key_permissions}}}),
             )
             .await?;
         let secret = value["created"]["key"]["secret"]
@@ -463,6 +470,33 @@ pub(super) async fn run(
     checkpoint(app, job, cancel, "verify").await?;
     runtime.upstream.session(&services.provisioning_key).await?;
     runtime.upstream.session(&services.notification_key).await?;
+    runtime
+        .upstream
+        .call(
+            &services.notification_key,
+            "Mailbox/get",
+            json!({"accountId":services.notification_account}),
+        )
+        .await?;
+    let identities = runtime
+        .upstream
+        .call(
+            &services.notification_key,
+            "Identity/get",
+            json!({"accountId":services.notification_account}),
+        )
+        .await?;
+    if !identities["list"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .any(|identity| identity["email"] == services.notification_email)
+    {
+        return Err(Error(
+            StatusCode::BAD_GATEWAY,
+            "notification_identity_missing",
+        ));
+    }
     checkpoint(app, job, cancel, "apply").await?;
     let _configuration = CONFIG_LOCK.lock().await;
     if !job.secrets.contains_key("previous-config")

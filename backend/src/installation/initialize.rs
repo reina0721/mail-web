@@ -13,6 +13,13 @@ static RUNNING: LazyLock<Mutex<Option<tokio_util::sync::CancellationToken>>> =
     LazyLock::new(Default::default);
 static JOB_LOCK: Mutex<()> = Mutex::const_new(());
 
+pub(super) async fn active(app: &App) -> Result<bool> {
+    if RUNNING.lock().await.is_some() {
+        return Ok(true);
+    }
+    Ok(journal::read(app)?.is_some_and(|job| job.status == "applying"))
+}
+
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct Grant {
@@ -298,12 +305,29 @@ pub(crate) async fn start(
         }
     }
     let _guard = JOB_LOCK.lock().await;
+    let _configuration_guard = CONFIG_LOCK.lock().await;
     if RUNNING.lock().await.is_some() {
         return Err(Error(StatusCode::CONFLICT, "initialization_running"));
     }
     provision::validate(&app, &access, &input.spec).await?;
     let mut job = match journal::read(&app)? {
-        Some(job) => {
+        Some(mut job) => {
+            // A later Turnstile authorization can extend a finished installation
+            // without recreating its service identities or changing its mail plan.
+            if job.status == "completed" && job.base == access.base {
+                let mut extended = job.spec.clone();
+                extended.cloudflare_account = input.spec.cloudflare_account.clone();
+                if job.spec.cloudflare_account.is_empty()
+                    && !input.spec.cloudflare_account.is_empty()
+                    && extended == input.spec
+                {
+                    job.owner = who.clone();
+                    job.spec = input.spec.clone();
+                    job.status = "pending".into();
+                } else if job.spec == input.spec {
+                    return Ok(Json(json!({"job":job.public()})));
+                }
+            }
             if job.owner != who || job.base != access.base || job.spec != input.spec {
                 return Err(Error(
                     StatusCode::CONFLICT,
@@ -399,10 +423,31 @@ pub(crate) async fn activate_pending(app: Arc<App>) {
     } else {
         job.status = "failed".into();
         job.error = "initialization_callback_unreachable".into();
-        if let Some(previous) = job
-            .secrets
-            .get("previous-config")
-            .and_then(|value| serde_json::from_str::<RuntimeConfig>(value).ok())
+        let mut update = json!({});
+        update[&app.services.hook_id] = json!({"enable":{"else":"false"}});
+        let disabled = app
+            .upstream
+            .call(
+                &app.services.provisioning_key,
+                "x:MtaHook/set",
+                json!({"update":update}),
+            )
+            .await
+            .is_ok()
+            && app
+                .upstream
+                .call(
+                    &app.services.provisioning_key,
+                    "x:Action/set",
+                    json!({"create":{"reload":{"@type":"ReloadSettings"}}}),
+                )
+                .await
+                .is_ok();
+        if disabled
+            && let Some(previous) = job
+                .secrets
+                .get("previous-config")
+                .and_then(|value| serde_json::from_str::<RuntimeConfig>(value).ok())
             && persist(&app.vault, &previous).is_ok()
         {
             RELOAD.notify_one();

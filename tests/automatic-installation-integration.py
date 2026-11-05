@@ -151,6 +151,16 @@ def exercise(mode):
         view = request("/installation/config", capability=capability)[1]
         assert view["provisioningKeySet"] and view["notificationKeySet"] and view["hookSecretSet"]
         assert not view["policyVerified"]
+        # Inspect key metadata through the isolated administrator; no secret is
+        # recoverable here. Runtime keys cannot inherit the whole User role.
+        import base64
+        for kind in ["directory", "notification"]:
+            payload = {"using": ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"], "methodCalls": [["x:ApiKey/get", {"accountId": job["resources"][kind], "properties": ["id", "permissions"]}, "k"]]}
+            req = urllib.request.Request("http://127.0.0.1:19080/jmap/", data=json.dumps(payload).encode(), headers={"Content-Type": "application/json", "Authorization": "Basic " + base64.b64encode(("bootstrap:" + admin_password).encode()).decode()})
+            with urllib.request.urlopen(req) as response:
+                values = json.load(response)["methodResponses"][0][1]["list"]
+            credential = next(k for k in values if k["id"] == job["resources"][kind + "Key"])
+            assert credential["permissions"]["@type"] == "Replace"
         # Same operation cannot create a second set of resources after completion.
         code, reauthorized = request(path + "authorize", "POST", credentials, capability, spec["publicOrigin"])
         assert code == 200

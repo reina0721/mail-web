@@ -2,8 +2,8 @@
   "readyForPublicRegistration": false,
   "evidenceScope": {
     "historicalProductionRelease": "v0.1.0-alpha.3",
-    "candidateRelease": "v0.2.0-alpha.5",
-    "candidateStatus": "Accepted prerelease: workflow 41956450361 passed build, contracts, 17 backend tests, real isolated Stalwart deep-link discovery and published artifact install/restore. Live CLI update to alpha.5 preserved encrypted configuration and existing operator; registration remains closed."
+    "candidateRelease": "v0.2.0-alpha.6",
+    "candidateStatus": "Automatic initialization candidate. Workflow 42043604233 passed the real Basic/API-key, existing/new domain and operator, callback activation and idempotence suites; final alpha.6 adds narrow runtime-key permissions, concurrent-edit guards and final UI checks. Release acceptance pending final workflow."
   },
   "verifiedInIsolatedStalwart101": [
     "Real user credentials, mailbox login and operator isolation",
@@ -34,7 +34,8 @@
   "unverified": [
     "Production Turnstile token verification through the final HTTPS origin",
     "Broader screen-reader and browser/device accessibility coverage",
-    "Public-origin signup including an actual Turnstile token and externally delivered verification code"
+    "Public-origin signup including an actual Turnstile token and externally delivered verification code",
+    "Real Cloudflare API-token widget creation for this deployment; requires an owner-supplied account-scoped Token"
   ],
   "verifiedInGenericDeployment": [
     "Fresh artifact-only installation in a user-selected directory, custom container name and explicit IP/port binding",

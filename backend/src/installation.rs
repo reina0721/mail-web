@@ -287,6 +287,9 @@ pub(super) async fn save_config(
 ) -> Result<Json<Value>> {
     authorize(&app, &headers, true).await?;
     let _lock = CONFIG_LOCK.lock().await;
+    if initialize::active(&app).await? {
+        return Err(Error(StatusCode::CONFLICT, "initialization_running"));
+    }
     let domain = input.domain.trim().to_lowercase();
     let brand = input.brand.trim().to_owned();
     if !domain_valid(&domain)
@@ -418,6 +421,9 @@ pub(super) async fn enroll_operator(
 ) -> Result<StatusCode> {
     authorize(&app, &headers, true).await?;
     let _lock = CONFIG_LOCK.lock().await;
+    if initialize::active(&app).await? {
+        return Err(Error(StatusCode::CONFLICT, "initialization_running"));
+    }
     let count: i64 = db::scalar(db::Statement::InstallationOperatorCount)
         .fetch_one(&app.db)
         .await?;

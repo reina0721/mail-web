@@ -18,6 +18,7 @@ const mode={expired:false,operator:true,fail:'',slow:false,theme:'light',ready:f
 const setupDocs='https://github.com/reina0721/mail-web/blob/main/docs/stalwart-setup.md';
 let setup={brand:'Mail Web',domain:'example.com',publicOrigin:'https://webmail.example.com',stalwartUrl:'https://mail.example.com',domainId:'preview-domain',notificationAccount:'',notificationEmail:'',hookId:'',turnstileSiteKey:''};
 const log=[];
+let initializationJob=null,initializationGrant='',initializationPolls=0,initializationBase='';
 function json(res,data,status=200){res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));}
 async function body(req){let s='';for await(const c of req)s+=c;return s?JSON.parse(s):{};}
 http.createServer(async(req,res)=>{try{
@@ -25,11 +26,32 @@ http.createServer(async(req,res)=>{try{
  if(p==='/__preview/control'&&req.method==='POST'){Object.assign(mode,await body(req));return json(res,mode);}
  if(p==='/__preview/log')return json(res,log);
  if(p.startsWith('/api/v1/')){
-  const key=p.slice(7),input=req.method==='GET'?{}:await body(req);log.push({method:req.method,path:key,input:Object.fromEntries(Object.entries(input).map(([k,v])=>[k,/password|secret|token|provisioningKey|notificationKey/i.test(k)?'[redacted]':v]))});
+  const key=p.slice(7),input=req.method==='GET'?{}:await body(req);log.push({method:req.method,path:key,input:Object.fromEntries(Object.entries(input).map(([k,v])=>[k,/password|secret|token|apiKey|ticket|provisioningKey|notificationKey/i.test(k)?'[redacted]':v]))});
   if(key==='/installation')return json(res,{configured:mode.setupConfigured,needsOperator:mode.setupNeedsOperator,brand:setup.brand,domain:mode.setupConfigured?setup.domain:'',version:'preview',instanceId:'isolated-preview-'+mode.setupEpoch});
   if(key==='/registration/policy')return json(res,policy);
   if(mode.expired)return json(res,{code:'unauthorized'},401);
   if(mode.fail&&key.startsWith(mode.fail))return json(res,{code:'unavailable'},503);
+  if(key==='/installation/initialize/authorize'){
+   if(input.username==='denied')return json(res,{code:'initialization_permissions_missing'},403);
+   if(mode.slow)await new Promise(resolve=>setTimeout(resolve,1200));
+   initializationGrant='example-memory-only-ticket';initializationBase=input.base;
+   return json(res,{ticket:initializationGrant,domains:[{id:'preview-domain',name:'example.com'},{id:'preview-other',name:'other.example'}],cloudflareAccounts:input.cloudflareToken?[{id:'0123456789abcdef0123456789abcdef',name:'示例 Cloudflare 账号'}]:[],missingPermissions:[],expiresInSeconds:600});
+  }
+  if(key==='/installation/initialize/preflight'){
+   if(input.ticket!==initializationGrant||!initializationGrant)return json(res,{code:'initialization_authorization_expired'},401);
+   return json(res,{resources:['邮箱域名（已有则复用）','本安装专用目录服务身份与 API 密钥','验证码发件邮箱与 API 密钥','本安装专用 MTA Hook 与共享密钥','运营邮箱及策略作用范围'],turnstile:!!input.spec.cloudflareAccount});
+  }
+  if(key==='/installation/initialize/job'){
+   if(req.method==='POST'){if(input.ticket!==initializationGrant||!initializationGrant)return json(res,{code:'initialization_authorization_expired'},401);initializationJob={id:'isolated-initialization',base:initializationBase,spec:input.spec,status:'running',step:'domain',resources:{},completed:[],error:''};initializationPolls=0;}
+   else if(initializationJob?.status==='running'){
+    const stages=['domain','directory','notification','hook','turnstile','operator','scope','verify','apply'];
+    initializationJob.step=stages[Math.min(initializationPolls,stages.length-1)];initializationJob.completed=stages.slice(0,initializationPolls++);
+    initializationJob.resources={domain:'preview-domain',directory:'preview-directory',notification:'preview-sender',hook:'preview-hook',...(initializationJob.spec.cloudflareAccount?{turnstile:'preview-sitekey'}:{})};
+    if(initializationPolls>stages.length){initializationJob.status='completed';setup={...setup,...initializationJob.spec,stalwartUrl:initializationBase};mode.setupConfigured=true;mode.setupNeedsOperator=false;mode.setupEpoch++;initializationGrant='';}
+   }
+   return json(res,{job:initializationJob});
+  }
+  if(key==='/installation/initialize/cancel'){initializationGrant='';if(initializationJob?.status==='running')initializationJob.status='cancelled';return json(res,{cancelRequested:true,resourcesDeleted:false});}
   if(key==='/installation/config'&&req.method==='GET')return json(res,{settings:mode.setupConfigured?setup:{brand:'Mail Web',domain:'',publicOrigin:'',stalwartUrl:'',domainId:'',notificationAccount:'',notificationEmail:'',hookId:'',turnstileSiteKey:''},provisioningKeySet:mode.setupConfigured,notificationKeySet:false,hookSecretSet:false,turnstileSecretSet:false,policyVerified:false,missingRequirements:['验证邮件账号','验证邮件密钥','Turnstile Site Key','Turnstile Secret','本部署专用 MTA Hook','Hook 共享密钥','SMTP／JMAP 提交协议验收声明'],documentationUrl:setupDocs});
   if(key==='/installation/config'){setup=Object.fromEntries(Object.entries(input).filter(([k])=>!['provisioningKey','notificationKey','hookSecret','turnstileSecret'].includes(k)));mode.setupConfigured=true;mode.setupEpoch++;return json(res,{saved:true,restartRequired:true});}
   if(key==='/installation/operator'){mode.setupNeedsOperator=false;return json(res,{});}
