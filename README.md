@@ -9,7 +9,7 @@
 - 发布平台：Linux AMD64；单实例 SQLite。
 - 服务器已有 Docker Engine、Compose v2，以及 `curl jq openssl tar sha256sum flock realpath`。安装器只检查这些工具，**不安装系统软件**。
 - 现有 Stalwart 提供可访问的 HTTPS JMAP 来源和已配置的邮件域名。
-- 准备一个专用目录服务 API 密钥；不是 Stalwart 管理员密码。最小权限及可选注册服务见后文。
+- 准备 Stalwart 管理员账号密码或管理员 API 密钥，用于一次性自动配置；如需自动创建 Turnstile，再准备目标 Cloudflare 账号的 Turnstile 写入 Token。
 - 先选择专用安装目录、容器名称和监听地址。目录通过 `--dir` 传入，项目没有固定安装路径。
 
 服务器下载 GitHub Release 的项目产物，校验 SHA-256，使用 `docker load` 导入镜像，再以 `--pull never --no-build` 启动。**目标服务器不从镜像仓库拉取镜像，也不编译源码。** CI 构建环境可使用官方构建和隔离测试镜像。
@@ -49,7 +49,11 @@ sh "$INSTALL_DIR/deploy/mail-web.sh" rotate-setup-token
 
 访问安装器给出的地址，或 `/setup/`，输入管理令牌。已登录的运营身份也可从账号菜单进入“站点配置”。
 
-填写：
+推荐使用默认的**自动配置**：输入 Stalwart 管理员账号密码或 API 密钥 → 点击“验证授权并读取域名” → 选择已有域名或新建域名 → 绑定已有普通运营邮箱或设置新运营邮箱 → 检查预览 → 点击一次“自动配置”。专用服务身份、发件账号、API 密钥、Hook 及所有内部 ID 均由程序创建和填写。
+
+填写 Cloudflare API Token 后，会读取可访问账号并自动创建本网站的 Turnstile Widget；无法列出账号时可补填 Account ID。管理员凭据及 Cloudflare Token 不落盘，闲置十分钟、完成或取消后清除；运行所需的专用凭据单独加密保存。详细权限、两种运营邮箱流程与失败恢复见 [自动配置教程](docs/stalwart-setup.md#automatic)。
+
+以下是保留的“高级手工配置”字段，正常自动配置不需要逐项填写：
 
 | 项目 | 填写内容 |
 |---|---|
@@ -67,7 +71,7 @@ sh "$INSTALL_DIR/deploy/mail-web.sh" rotate-setup-token
 
 首次接通后，在面板绑定一个**已有的普通邮箱**作为本部署的运营身份：填写该邮箱、它的密码和外部恢复邮箱。服务器先验证邮箱所有权与普通用户角色，再建立本地运营关联；不修改该账号的 Stalwart 管理员权限或密码。Stalwart 管理员及带系统权限的服务身份不能作为此处的普通运营邮箱。
 
-运营角色仅属于本部署。若需要创建独立的新运营邮箱，使用下文的高级初始化流程，不接管已有地址。
+运营角色仅属于本部署。默认自动向导同时支持绑定已有和新建普通运营邮箱；下文脚本是额外的高级初始化方式，不接管已有地址。
 
 ## 4. 公网 HTTP 的安全管理入口
 

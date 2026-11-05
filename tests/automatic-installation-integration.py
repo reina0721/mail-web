@@ -29,7 +29,6 @@ def request(path, method="GET", body=None, capability=None, origin=ORIGIN, opene
     if data is not None:
         headers["Content-Type"] = "application/json"
     req = urllib.request.Request(ORIGIN + "/api/v1" + path, data=data, headers=headers, method=method)
-    job = None
     try:
         open_request = opener.open if opener else urllib.request.urlopen
         with open_request(req, timeout=20) as response:
@@ -73,6 +72,7 @@ def exercise(mode):
            "-e", "SESSION_KEY_FILE=/runtime/secrets/session.key", "-e", "SETUP_TOKEN_FILE=/runtime/secrets/setup.key",
            "-e", "RUNTIME_CONFIG_FILE=/runtime/config/runtime.enc", "-e", "DATABASE_PATH=/runtime/data/mail.sqlite",
            "-e", "LOG_DIR=/runtime/logs", "-e", "STAGING_DIR=/runtime/data/staging", "-v", str(ROOT) + ":/runtime", IMAGE)
+    job = None
     try:
         initial = wait_ready()
         capability = (ROOT / "secrets/setup.key").read_text().strip()
@@ -88,7 +88,7 @@ def exercise(mode):
                 with urllib.request.urlopen(req) as response:
                     return json.load(response)["methodResponses"][0][1]
             domain_id = next(d["id"] for d in admin_rpc("x:Domain/get", {"properties": ["id", "name"]})["list"] if d["name"] == "mail.example.com")
-            permissions = {name: True for name in ["sysAccountGet", "sysAccountCreate", "sysAccountUpdate", "sysDomainGet", "sysDomainCreate", "sysMtaHookGet", "sysMtaHookCreate", "sysActionCreate", "actionReloadSettings"]}
+            permissions = {name: True for name in ["sysAccountGet", "sysAccountCreate", "sysAccountUpdate", "sysAccountQuery", "sysDomainGet", "sysDomainCreate", "sysDomainQuery", "sysMtaHookGet", "sysMtaHookCreate", "sysMtaHookUpdate", "sysActionCreate", "actionReloadSettings"]}
             account = admin_rpc("x:Account/set", {"create": {"admin": {"@type": "User", "name": "automatic-admin", "domainId": domain_id, "roles": {"@type": "User"}, "permissions": {"@type": "Merge", "enabledPermissions": permissions}, "credentials": {"0": {"@type": "Password", "secret": "Isolated-automation-admin-password"}}}}})
             assert "admin" in account["created"]
             data = json.dumps({"using": ["urn:ietf:params:jmap:core", "urn:stalwart:jmap"], "methodCalls": [["x:ApiKey/set", {"create": {"key": {"description": "isolated automatic setup admin", "permissions": {"@type": "Inherit"}}}}, "k"]]}).encode()

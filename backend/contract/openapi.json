@@ -641,22 +641,12 @@
         }
       }
     },
-    "/api/v1/auth/sessions/{id}": {
-      "delete": {
+    "/api/v1/auth/sessions/revoke-others": {
+      "post": {
         "tags": [
           "account"
         ],
-        "operationId": "revoke_session",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
+        "operationId": "revoke_others",
         "responses": {
           "200": {
             "description": "",
@@ -678,12 +668,22 @@
         }
       }
     },
-    "/api/v1/auth/sessions/revoke-others": {
-      "post": {
+    "/api/v1/auth/sessions/{id}": {
+      "delete": {
         "tags": [
           "account"
         ],
-        "operationId": "revoke_others",
+        "operationId": "revoke_session",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -1227,6 +1227,43 @@
         }
       }
     },
+    "/api/v1/messages/batch": {
+      "post": {
+        "tags": [
+          "mail"
+        ],
+        "operationId": "batch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Batch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "204": {
+            "description": "Completed"
+          },
+          "401": {
+            "description": "Session required"
+          },
+          "403": {
+            "description": "Denied"
+          }
+        }
+      }
+    },
     "/api/v1/messages/{id}": {
       "get": {
         "tags": [],
@@ -1289,43 +1326,6 @@
           },
           "204": {
             "description": "Completed"
-          }
-        }
-      }
-    },
-    "/api/v1/messages/batch": {
-      "post": {
-        "tags": [
-          "mail"
-        ],
-        "operationId": "batch",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/Batch"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "204": {
-            "description": "Completed"
-          },
-          "401": {
-            "description": "Session required"
-          },
-          "403": {
-            "description": "Denied"
           }
         }
       }

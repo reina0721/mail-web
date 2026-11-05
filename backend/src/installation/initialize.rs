@@ -230,12 +230,22 @@ pub(crate) struct Request {
     #[serde(default, rename = "operatorPassword")]
     operator_password: Option<String>,
 }
+fn normalize_spec(spec: &mut Spec) -> Result<()> {
+    spec.brand = spec.brand.trim().into();
+    spec.domain = spec.domain.trim().to_lowercase();
+    spec.operator_email = spec.operator_email.trim().to_lowercase();
+    spec.recovery_email = spec.recovery_email.trim().to_lowercase();
+    spec.public_origin = config::validate_origin(spec.public_origin.trim())
+        .map_err(|_| Error(StatusCode::BAD_REQUEST, "public_origin_invalid"))?;
+    Ok(())
+}
 #[utoipa::path(post,tag="installation",path="/api/v1/installation/initialize/preflight",request_body=Value,responses((status=200,body=Value)))]
 pub(crate) async fn preflight(
     State(app): State<Arc<App>>,
     headers: HeaderMap,
     Json(mut input): Json<Request>,
 ) -> Result<Json<Value>> {
+    normalize_spec(&mut input.spec)?;
     let who = owner(&app, &headers, true).await?;
     let mut access = grant(&input.ticket, &who).await?;
     if let Some(password) = input.operator_password.take() {
@@ -278,6 +288,7 @@ pub(crate) async fn start(
     headers: HeaderMap,
     Json(mut input): Json<Request>,
 ) -> Result<Json<Value>> {
+    normalize_spec(&mut input.spec)?;
     let who = owner(&app, &headers, true).await?;
     let mut access = grant(&input.ticket, &who).await?;
     if let Some(password) = input.operator_password.take() {
@@ -404,6 +415,9 @@ pub(crate) async fn cancel(State(app): State<Arc<App>>, headers: HeaderMap) -> R
     let who = owner(&app, &headers, true).await?;
     {
         let _guard = JOB_LOCK.lock().await;
+        if journal::read(&app)?.is_some_and(|job| job.status == "applying") {
+            return Err(Error(StatusCode::CONFLICT, "initialization_applying"));
+        }
         if let Some(job) = journal::read(&app)?
             && job.owner != who
         {
@@ -420,4 +434,37 @@ pub(crate) async fn cancel(State(app): State<Arc<App>>, headers: HeaderMap) -> R
     Ok(Json(
         json!({"cancelRequested":true,"resourcesDeleted":false}),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn temporary_authorization_enforces_owner_and_idle_expiry() {
+        let ticket = token();
+        let mut value:Grant=serde_json::from_value(json!({"base":"https://mail.example.com","username":"administrator","password":"memory-only-password"})).unwrap();
+        value.owner = "owner-a".into();
+        value.expires = db::now() + 30_000;
+        GRANTS.lock().await.insert(ticket.clone(), value);
+        assert!(grant(&ticket, "owner-b").await.is_err());
+        assert!(grant(&ticket, "owner-a").await.is_ok());
+        GRANTS.lock().await.get_mut(&ticket).unwrap().expires = db::now() - 1;
+        assert!(grant(&ticket, "owner-a").await.is_err());
+        assert!(!GRANTS.lock().await.contains_key(&ticket));
+    }
+    #[test]
+    fn sources_reject_credentials_and_unrelated_paths() {
+        assert_eq!(
+            normalize_source("mail.example.com:8443/admin/").unwrap(),
+            "https://mail.example.com:8443"
+        );
+        for raw in [
+            "https://user:secret@mail.example.com",
+            "https://mail.example.com/other",
+            "https://mail.example.com?token=secret",
+            "file:///secret",
+        ] {
+            assert!(normalize_source(raw).is_err());
+        }
+    }
 }

@@ -68,7 +68,8 @@ pub(super) async fn validate(app: &App, access: &Grant, spec: &Spec) -> Result<(
         if !valid_name(name)
             || !spec.recovery_email.contains('@')
             || spec.recovery_email.ends_with(&format!("@{}", spec.domain))
-            || access.operator_password.len() < 12
+            || access.operator_password.is_empty()
+            || (spec.operator_mode == "new" && access.operator_password.len() < 12)
             || access.operator_password.len() > 512
             || !matches!(spec.operator_mode.as_str(), "existing" | "new")
         {
@@ -386,6 +387,7 @@ async fn operator(app: &App, job: &mut Job, access: &Grant, runtime: &App) -> Re
     if privileged_permissions(item)
         || item["roles"]["@type"] != "User"
         || item["domainId"] != runtime.services.domain_id
+        || item["name"].as_str() != job.spec.operator_email.split('@').next()
     {
         return Err(Error(StatusCode::BAD_REQUEST, "ordinary_mailbox_required"));
     }
