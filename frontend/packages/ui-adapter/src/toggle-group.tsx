@@ -57,7 +57,7 @@ const groupContainerClass = {
   single:
     'inline-flex min-w-0 max-w-full overflow-x-auto rounded-panel border border-border bg-surface-muted p-1',
   multiple:
-    'inline-flex min-w-0 max-w-full flex-wrap items-stretch gap-1 rounded-panel border border-border bg-surface-muted p-1',
+    'inline-flex min-w-0 max-w-full flex-wrap items-stretch gap-2 border-0 bg-transparent p-0',
 } as const;
 
 export function ToggleGroup({
@@ -91,7 +91,8 @@ export function ToggleGroup({
       <HeroToggleButtonGroup
         ref={ref}
         aria-labelledby={labelId}
-        className={groupContainerClass[selectionMode]}
+        className={`ui-toggle-${selectionMode} ${groupContainerClass[selectionMode]}`}
+        isDetached={selectionMode === 'multiple'}
         isDisabled={disabled}
         onSelectionChange={(keys) => onSelectionChange([...keys].map(String))}
         selectedKeys={new Set(selectedIds)}
@@ -100,7 +101,7 @@ export function ToggleGroup({
       >
         {options.map((option) => (
           <ToggleButton
-            className={`${toggleStyles({ size })} ${itemBorderByMode[selectionMode]} ${selectionMode === 'single' ? 'shrink-0 whitespace-nowrap' : ''}`}
+            className={`ui-toggle-item ${toggleStyles({ size })} ${itemBorderByMode[selectionMode]} ${selectionMode === 'single' ? 'shrink-0 whitespace-nowrap' : ''}`}
             id={option.id}
             key={option.id}
             variant="ghost"

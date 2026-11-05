@@ -24,6 +24,7 @@ pub async fn settings(app: &App) -> Result<Value> {
 pub(super) struct PublicRegistrationPolicy {
     enabled: bool,
     domain: String,
+    brand: String,
     site_key: String,
     maximum_accounts: i64,
     attachment_bytes: i64,
@@ -35,7 +36,8 @@ pub(super) async fn public_policy(
     let p = settings(&app).await?;
     Ok(Json(PublicRegistrationPolicy {
         enabled: p["enabled"] == true && app.services.ready(),
-        domain: "iqwq.com".into(),
+        domain: app.services.domain.clone(),
+        brand: app.services.brand.clone(),
         site_key: app.services.turnstile_site_key.clone(),
         maximum_accounts: p["maximumAccounts"].as_i64().unwrap_or(100),
         attachment_bytes: p["attachmentBytes"].as_i64().unwrap_or(20971520),
@@ -171,7 +173,7 @@ pub(super) async fn challenge(
     .await?;
     let email = input.email.trim().to_lowercase();
     if !address(&email)
-        || email.ends_with("@iqwq.com")
+        || app.services.is_local_address(&email)
         || !matches!(input.purpose.as_str(), "registration" | "recovery")
     {
         return Err(Error(StatusCode::BAD_REQUEST, "recovery_email_invalid"));
@@ -199,7 +201,7 @@ pub(super) async fn challenge(
     notify(
         &app,
         &email,
-        "IQWQ Mail 验证码",
+        &format!("{} 验证码", app.services.brand),
         &format!("你的验证码为 {code}，10 分钟内有效。如非本人操作，请忽略此邮件。"),
     )
     .await?;
@@ -266,7 +268,7 @@ pub(super) async fn availability(
         return Ok(Json(json!({"available":false})));
     }
     let count: i64 = db::scalar(db::Statement::RegistrationAvailabilitySelectPlatformUsers)
-        .bind(format!("{name}@iqwq.com"))
+        .bind(app.services.address(name))
         .fetch_one(&app.db)
         .await?;
     Ok(Json(json!({"available":count==0})))
@@ -292,7 +294,7 @@ pub(super) async fn register(
     if !local_part(&input.name) || !(12..=128).contains(&input.password.chars().count()) {
         return Err(Error(StatusCode::BAD_REQUEST, "registration_input_invalid"));
     }
-    let email = format!("{}@iqwq.com", input.name);
+    let email = app.services.address(&input.name);
     let mut tx = db::begin(&app.db).await?;
     let challenge = db::query(db::Statement::RegistrationRegisterSelectVerificationChallenges)
         .bind(input.challenge_id)

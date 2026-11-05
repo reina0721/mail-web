@@ -1,5 +1,5 @@
 import { AlertDialog } from '@heroui/react/alert-dialog';
-import { Button as HeroButton } from '@heroui/react/button';
+import { Action } from './action';
 import { OverlayTriggerAction } from './overlay-trigger';
 import { useRef, useState, type ReactNode } from 'react';
 
@@ -105,19 +105,19 @@ export function ConfirmDialog({
             <AlertDialog.Footer className="flex flex-wrap justify-end gap-3 border-t border-border px-6 py-4">
               <AlertDialog.CloseTrigger
                 aria-label={cancelLabel}
-                className="static inline-flex min-h-control w-auto min-w-20 items-center justify-center rounded-control border border-border bg-surface px-4 text-sm font-semibold leading-none text-ink shadow-sm hover:bg-surface-muted"
+                className="static inline-flex min-h-control w-auto min-w-20 items-center justify-center rounded-control border border-border bg-surface px-4 text-sm font-semibold leading-none text-ink shadow-none hover:bg-surface-muted"
                 isDisabled={pending}
               >
                 {cancelLabel}
               </AlertDialog.CloseTrigger>
-              <HeroButton
-                className={`inline-flex min-h-control items-center justify-center rounded-control px-4 text-sm font-semibold ${tone === 'danger' ? 'bg-danger text-on-danger hover:bg-danger/90' : 'bg-brand text-on-brand hover:bg-brand-strong'}`}
-                isDisabled={confirmDisabled || pending}
-                isPending={pending}
+              <Action
+                variant={tone === 'danger' ? 'danger' : 'primary'}
+                disabled={confirmDisabled || pending}
+                loading={pending}
                 onPress={() => void confirm()}
               >
                 {confirmLabel}
-              </HeroButton>
+              </Action>
             </AlertDialog.Footer>
           </AlertDialog.Dialog>
         </AlertDialog.Container>

@@ -11,7 +11,7 @@ export function TooltipAction({ label, tooltip, defaultOpen = false }: TooltipAc
     <Tooltip defaultOpen={defaultOpen} delay={100}>
       <Tooltip.Trigger className="ui-overlay-trigger">{label}</Tooltip.Trigger>
       <Tooltip.Content
-        className="rounded-control border border-border bg-ink px-3 py-2 text-xs font-medium text-surface shadow-overlay"
+        className="ui-icon-tooltip border border-border text-xs font-medium"
         placement="top"
         showArrow
       >

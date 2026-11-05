@@ -388,6 +388,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/installation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/installation/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["read_config"];
+        put: operations["save_config"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/installation/operator": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["enroll_operator"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/mailboxes": {
         parameters: {
             query?: never;
@@ -588,6 +636,29 @@ export interface components {
             /** Format: uuid */
             challengeId: string;
         };
+        ConfigurationInput: {
+            brand: string;
+            domain: string;
+            domainId?: string;
+            hookId?: string;
+            hookSecret?: string | null;
+            notificationAccount?: string;
+            notificationEmail?: string;
+            notificationKey?: string | null;
+            provisioningKey?: string | null;
+            publicOrigin: string;
+            stalwartUrl: string;
+            turnstileSecret?: string | null;
+            turnstileSiteKey?: string;
+        };
+        ConfigurationView: {
+            hookSecretSet: boolean;
+            notificationKeySet: boolean;
+            policyVerified: boolean;
+            provisioningKeySet: boolean;
+            settings: components["schemas"]["ConfigurationInput"];
+            turnstileSecretSet: boolean;
+        };
         CredentialInput: {
             description: string;
         };
@@ -602,6 +673,14 @@ export interface components {
             text: string;
             to: string[];
         };
+        InstallationStatus: {
+            brand: string;
+            configured: boolean;
+            domain: string;
+            instanceId: string;
+            needsOperator: boolean;
+            version: string;
+        };
         Login: {
             email: string;
             password: string;
@@ -613,6 +692,11 @@ export interface components {
             mailbox?: string | null;
             read?: boolean | null;
             starred?: boolean | null;
+        };
+        OperatorInput: {
+            email: string;
+            password: string;
+            recovery: string;
         };
         PasswordInput: {
             current_password: string;
@@ -626,6 +710,7 @@ export interface components {
         PublicRegistrationPolicy: {
             /** Format: int64 */
             attachmentBytes: number;
+            brand: string;
             domain: string;
             enabled: boolean;
             /** Format: int64 */
@@ -1742,6 +1827,117 @@ export interface operations {
             };
             /** @description Completed */
             204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InstallationStatus"];
+                };
+            };
+        };
+    };
+    read_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigurationView"];
+                };
+            };
+            /** @description Maintenance token or operator session required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    save_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigurationInput"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Invalid configuration */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authorization required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    enroll_operator: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OperatorInput"];
+            };
+        };
+        responses: {
+            /** @description Existing ordinary mailbox enrolled as platform operator */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Ordinary account in the configured domain required */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

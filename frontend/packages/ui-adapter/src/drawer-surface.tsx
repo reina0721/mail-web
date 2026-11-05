@@ -39,16 +39,16 @@ export function DrawerSurface({
     <Drawer isOpen={open} onOpenChange={setOpen}>
       {controlled ? null : <OverlayTriggerAction>{triggerLabel}</OverlayTriggerAction>}
       <Drawer.Backdrop className="ui-overlay-motion bg-scrim backdrop-blur-sm">
-        <Drawer.Content className="ui-overlay-motion" placement={placement}>
+        <Drawer.Content className="ui-overlay-motion ui-drawer-motion" placement={placement}>
           <Drawer.Dialog
-            className={`ui-overlay-surface relative h-full w-full rounded-none ${composition === 'navigation' ? 'max-w-sm' : 'max-w-lg'}`}
+            className={`ui-overlay-surface ui-drawer-surface relative h-full w-full rounded-none ${composition === 'navigation' ? 'max-w-sm' : 'max-w-lg'}`}
           >
             <Drawer.Header className="border-b border-border px-6 py-5 pr-20">
               <Drawer.Heading className="text-lg font-bold text-ink">{title}</Drawer.Heading>
               <p className="mt-1 text-sm leading-6 text-ink-muted">{description}</p>
               <Drawer.CloseTrigger
                 aria-label={closeLabel}
-                className="absolute right-5 top-5 grid size-10 place-items-center rounded-control border border-border bg-surface text-xl leading-none text-ink shadow-sm hover:bg-surface-muted"
+                className="absolute right-5 top-5 grid size-10 place-items-center rounded-control border border-border bg-surface text-xl leading-none text-ink shadow-none hover:bg-surface-muted"
               >
                 <span aria-hidden="true">×</span>
               </Drawer.CloseTrigger>

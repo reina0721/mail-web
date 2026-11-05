@@ -12,7 +12,7 @@ export function FeedbackToastRegion({
         const content = toast.content;
         return (
           <Toast
-            className="border-border bg-surface-raised text-ink shadow-overlay"
+            className="ui-toast-surface border-border bg-surface-raised text-ink"
             toast={toast}
             variant={content.variant}
           >

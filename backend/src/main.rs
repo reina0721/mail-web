@@ -3,6 +3,7 @@ mod bootstrap;
 mod config;
 mod crypto;
 mod db;
+mod installation;
 mod logging;
 mod mail;
 mod policy;
@@ -29,6 +30,9 @@ use tower_http::services::ServeDir;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+static SHUTDOWN: std::sync::LazyLock<tokio_util::sync::CancellationToken> =
+    std::sync::LazyLock::new(tokio_util::sync::CancellationToken::new);
+
 #[derive(Clone)]
 struct App {
     db: db::Pool,
@@ -36,6 +40,25 @@ struct App {
     vault: Vault,
     origin: String,
     services: config::Services,
+}
+impl App {
+    fn cookie_name(&self, kind: &str) -> String {
+        format!(
+            "{}mail_{kind}",
+            if self.origin.starts_with("https://") {
+                "__Host-"
+            } else {
+                ""
+            }
+        )
+    }
+    fn cookie_security(&self) -> &'static str {
+        if self.origin.starts_with("https://") {
+            "; Secure"
+        } else {
+            ""
+        }
+    }
 }
 #[derive(Debug)]
 struct Error(StatusCode, &'static str);
@@ -138,7 +161,7 @@ async fn identity(app: &App, headers: &HeaderMap, write: bool) -> Result<Identit
     identify(app, headers, write, true).await
 }
 async fn identify(app: &App, headers: &HeaderMap, write: bool, touch: bool) -> Result<Identity> {
-    let sid = cookie(headers, "__Host-mail_session")
+    let sid = cookie(headers, &app.cookie_name("session"))
         .ok_or(Error(StatusCode::UNAUTHORIZED, "session_required"))?;
     let sid = hash(&sid);
     let row = db::query(db::Statement::MainIdentifySelectSessions)
@@ -194,6 +217,9 @@ async fn login(
     headers: HeaderMap,
     Json(input): Json<Login>,
 ) -> Result<Response> {
+    if !installation::configured(&app) {
+        return Err(Error(StatusCode::SERVICE_UNAVAILABLE, "setup_required"));
+    }
     same_origin(&app, &headers)?;
     policy::rate(
         &app,
@@ -257,14 +283,18 @@ async fn login(
     response.headers_mut().append(
         "set-cookie",
         HeaderValue::from_str(&format!(
-            "__Host-mail_session={id}; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=28800"
+            "{}={id}; Path=/{}; HttpOnly; SameSite=Strict; Max-Age=28800",
+            app.cookie_name("session"),
+            app.cookie_security()
         ))
         .map_err(|_| internal("cookie"))?,
     );
     response.headers_mut().append(
         "set-cookie",
         HeaderValue::from_str(&format!(
-            "__Host-mail_csrf={csrf}; Path=/; Secure; SameSite=Strict; Max-Age=28800"
+            "{}={csrf}; Path=/{}; SameSite=Strict; Max-Age=28800",
+            app.cookie_name("csrf"),
+            app.cookie_security()
         ))
         .map_err(|_| internal("cookie"))?,
     );
@@ -298,13 +328,16 @@ async fn logout(State(app): State<Arc<App>>, headers: HeaderMap) -> Result<Respo
     tx.commit().await?;
     account::JOB_NOTIFY.notify_one();
     let mut response = StatusCode::NO_CONTENT.into_response();
-    for value in [
-        "__Host-mail_session=; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=0",
-        "__Host-mail_csrf=; Path=/; Secure; SameSite=Strict; Max-Age=0",
-    ] {
-        response
-            .headers_mut()
-            .append("set-cookie", HeaderValue::from_static(value));
+    for (kind, http_only) in [("session", "; HttpOnly"), ("csrf", "")] {
+        let value = format!(
+            "{}=; Path=/{}{http_only}; SameSite=Strict; Max-Age=0",
+            app.cookie_name(kind),
+            app.cookie_security()
+        );
+        response.headers_mut().append(
+            "set-cookie",
+            HeaderValue::from_str(&value).map_err(|_| internal("cookie"))?,
+        );
     }
     Ok(response)
 }
@@ -528,6 +561,10 @@ async fn health(State(app): State<Arc<App>>) -> Result<Json<Value>> {
         message,
         update_message,
         health,
+        installation::status,
+        installation::read_config,
+        installation::save_config,
+        installation::enroll_operator,
         registration::public_policy,
         registration::challenge,
         registration::verify,
@@ -739,12 +776,44 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
     ))
     .await?;
 
-    let origin = config::origin()?;
-    let upstream_base = config::upstream(&origin)?;
+    installation::ensure_token()?;
+    let saved = installation::load(&vault)?;
+    if let Some(index) = args.iter().position(|arg| arg == "--set-policy-verified") {
+        let verified = match args.get(index + 1).map(String::as_str) {
+            Some("true") => true,
+            Some("false") => false,
+            _ => return Err("use --set-policy-verified true|false".into()),
+        };
+        installation::set_policy_verified(&vault, verified)?;
+        println!("Recorded submission policy acceptance: {verified}");
+        return Ok(());
+    }
+    let origin = match &saved {
+        Some(settings) => settings.origin.clone(),
+        None => {
+            if std::env::var("PUBLIC_ORIGIN").is_ok_and(|s| !s.trim().is_empty()) {
+                config::origin()?
+            } else {
+                String::new()
+            }
+        }
+    };
+    let upstream_base = match &saved {
+        Some(settings) => settings.stalwart_url.clone(),
+        None => {
+            if std::env::var("STALWART_URL").is_ok_and(|s| !s.trim().is_empty()) {
+                config::upstream(&origin)?
+            } else {
+                String::new()
+            }
+        }
+    };
     let app = Arc::new(App {
         db,
         vault,
-        services: config::Services::load(),
+        services: saved
+            .map(|settings| settings.services)
+            .unwrap_or_else(config::Services::load),
         origin,
         upstream: Stalwart {
             http: reqwest::Client::builder()
@@ -769,11 +838,14 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         &std::env::var("STAGING_DIR").unwrap_or_else(|_| "data/staging".into()),
     ))
     .await?;
-    tokio::spawn(revocations(app.clone()));
+    if installation::configured(&app) {
+        tokio::spawn(revocations(app.clone()));
+    }
     let api = Router::new()
         .merge(registration::routes())
         .merge(account::routes())
         .merge(mail::routes())
+        .merge(installation::routes())
         .route("/health/ready", get(health))
         .route("/auth/login", post(login))
         .route("/auth/session", get(session))
@@ -807,13 +879,15 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
             if let Ok(mut terminate) =
                 tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
             {
-                tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {} }
+                tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = terminate.recv() => {}, _=installation::RELOAD.notified()=>{} }
             } else {
-                let _ = tokio::signal::ctrl_c().await;
+                tokio::select! {_=tokio::signal::ctrl_c()=>{},_=installation::RELOAD.notified()=>{}}
             }
         }
         #[cfg(not(unix))]
-        let _ = tokio::signal::ctrl_c().await;
+        tokio::select! {_=tokio::signal::ctrl_c()=>{},_=installation::RELOAD.notified()=>{}}
+        // Long-lived mailbox event streams must close for an orderly restart.
+        SHUTDOWN.cancel();
     })
     .await?;
     Ok(())

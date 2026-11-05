@@ -1,77 +1,184 @@
 # Mail Web
 
-独立 Webmail：Next.js 静态页面由 Rust/Axum 提供；SQLite 保存平台数据，现有 Stalwart 保存邮件。注册地址固定为 `@iqwq.com`。当前为开发预览，**公开注册默认关闭**；验收状态见 [docs/acceptance.json](docs/acceptance.json)。不能将构建成功等同于生产验收完成。
+通用、可自行部署的 Webmail 与运营面板。Next.js 静态界面由 Rust/Axum 提供，SQLite 保存平台数据，现有 Stalwart 保存邮件。**项目不预设邮件域名或运营品牌**：部署后在安装面板填写自己的站点名称、域名和 Stalwart 连接信息。公开注册默认关闭。
 
-## 运行与安装
+当前发布通道为开发预览。构建、隔离集成测试和真实部署验收分别记录，不将构建成功当作邮件投递或注册服务验收。
 
-生产安装目录 `/workapps/mail-web`。Linux AMD64、Docker Compose、curl、jq、openssl、tar、sha256sum 和 flock 为宿主机依赖。现有 Stalwart 必须已运行，应用接入其 Docker 网络。首版仅支持单应用实例和 SQLite，不支持通过替换连接地址直接切换 MySQL。
+## 1. 部署方式与准备
 
-发布包通过 GitHub Release 下载，校验后 `docker load`，Compose 使用本地镜像。目标服务器不执行 `docker pull` 或源码编译。
+- 发布平台：Linux AMD64；单实例 SQLite。
+- 服务器已有 Docker Engine、Compose v2，以及 `curl jq openssl tar sha256sum flock realpath`。安装器只检查这些工具，**不安装系统软件**。
+- 现有 Stalwart 提供可访问的 HTTPS JMAP 来源和已配置的邮件域名。
+- 准备一个专用目录服务 API 密钥；不是 Stalwart 管理员密码。最小权限及可选注册服务见后文。
+- 先选择专用安装目录、容器名称和监听地址。目录通过 `--dir` 传入，项目没有固定安装路径。
+
+服务器下载 GitHub Release 的项目产物，校验 SHA-256，使用 `docker load` 导入镜像，再以 `--pull never --no-build` 启动。**目标服务器不从镜像仓库拉取镜像，也不编译源码。** CI 构建环境可使用官方构建和隔离测试镜像。
+
+## 2. 下载与安装
+
+以下目录只是示例，请自行指定：
 
 ```sh
-curl -fSL https://raw.githubusercontent.com/reina0721/mail-web/main/deploy/install.sh -o install-mail-web.sh
-sh install-mail-web.sh v0.1.0-alpha.3
-# 或省略版本，使用最新稳定版；尚无稳定版时明确失败。
+INSTALL_DIR="$HOME/apps/mail-web"
+VERSION=v0.2.0-alpha.1
+mkdir -p "$INSTALL_DIR"
+curl -fSL "https://raw.githubusercontent.com/reina0721/mail-web/$VERSION/deploy/install.sh" -o "$INSTALL_DIR/install.sh"
+sh "$INSTALL_DIR/install.sh" \
+  --dir "$INSTALL_DIR" \
+  --version "$VERSION" \
+  --name mail-web \
+  --bind 127.0.0.1:18090
 ```
 
-安装后编辑项目 `.env`。设置实际 `PUBLIC_ORIGIN`、Stalwart 地址、网络及服务配置，再执行 `sh /workapps/mail-web/deploy/mail-web.sh start`。从任何工作目录调用工具，数据均以脚本所属安装目录为根。
+默认只绑定回环地址。若已准备 HTTPS 反代，将它指向所选监听端口。代理需保留正确 Host/Origin，允许 SSE 长连接并关闭缓冲。本项目不自动修改 DNS、反向代理或其他项目。
 
-默认入口 `127.0.0.1:18090`，容器内部 `0.0.0.0:8080`。本项目不配置 DNS、Nginx、域名跳转或证书。自行配置 HTTPS 反代；Cookie 始终为 Secure，HTTP 公网访问不支持登录。代理应保留正确 Host/Origin，SSE 禁用缓冲、允许长连接。应用不依据任意转发头改变来源或授权。
+要直接通过指定 IP 和端口使用 HTTP，需要自行选择监听 IP，并显式传入 `--allow-http`。HTTP 不加密登录信息、邮件或 Cookie；管理配置应使用后文的 SSH 通道，正式用户入口建议配置 HTTPS。不能把 HTTP 登录描述为加密访问。
 
-## 项目数据
+安装结束会显示当前安装的 `/setup/` 链接及管理令牌。该链接属于管理能力，请保密。令牌保存在本安装的 `secrets/setup.key`，不会进入镜像或 Git。再次获取或轮换：
 
-Compose 仅使用 `./data`、`./logs`、`./config`、`./secrets`、`./backups` 相对映射。SQLite 数据库、WAL 和 SHM 位于 `data/db`，附件暂存于 `data/staging`。Docker 引擎自身元数据和镜像层属于运行基础设施。
+```sh
+sh "$INSTALL_DIR/deploy/mail-web.sh" setup
+sh "$INSTALL_DIR/deploy/mail-web.sh" rotate-setup-token
+```
 
-`secrets/session.key` 为 32 字节加密密钥的十六进制表示，丢失后无法解密会话凭据。以下文件均不入 Git、不进入镜像：
+无稳定版时，`latest` 会明确失败；开发预览请像示例一样指定准确版本。稳定版发布后可使用 `--version latest`。可用 `--repository OWNER/REPO` 或 `MAIL_WEB_REPOSITORY` 为自己的 fork 指定产物来源。
 
-| 文件 | 用途 |
+## 3. 进入面板配置 Stalwart
+
+访问安装器给出的地址，或 `/setup/`，输入管理令牌。已登录的运营身份也可从账号菜单进入“站点配置”。
+
+填写：
+
+| 项目 | 填写内容 |
 |---|---|
-| `provisioning.key` | 独立开户服务身份的 Stalwart API 密钥 |
-| `notification.key` | 独立验证邮件发送账号的 API 密钥 |
-| `turnstile.key` | Cloudflare Turnstile Secret |
-| `mta-hook.key` | 内部提交策略认证 |
-| `session.key` | 数据库中上游用户凭据的加密 |
+| 站点名称 | 你自己的品牌或组织名称 |
+| 邮箱域名 | Stalwart 中已有的域名，不含 `@`；不会被安装器代替创建 |
+| 网站访问地址 | 最终用户访问的完整来源，包含协议和非默认端口，不含路径 |
+| Stalwart 地址 | 现有 HTTPS 来源，不含 `/jmap` 路径、用户名或密码 |
+| 专用目录服务 API 密钥 | 目录管理服务身份的密钥 |
 
-初始化工具 `deploy/bootstrap-stalwart.sh` 使用临时管理凭据建立服务身份，随后 `deploy/setup-hook.sh` 建立初始范围为空的 Hook。工具不会修改管理员密码或邮件域名。将生成的 `config/domain-id`、`config/no-reply.account-id`、`config/mta-hook-id` 分别填入 `.env` 的 `STALWART_DOMAIN_ID`、`NOTIFICATION_ACCOUNT_ID`、`STALWART_HOOK_ID`。临时管理员密钥应在初始化完成后撤销，不作为运行配置。
+保存前，服务器会实际请求 Stalwart，确认密钥能够读取所选域名，并自动读取域名 ID。失败会保留表单输入。配置使用安装密钥加密，写入 `config/runtime.enc`；读取接口仅返回密钥是否已设置，不回显密钥。留空密钥字段会保留现有值。
 
-初始运营身份独立创建，不能直接接管已有管理员。先在 `secrets/operator.initial-password` 写入不少于 16 字符的初始密码，再运行：
+保存后，进程有序退出，由 Docker 的重启策略重新启动，面板会等待新进程就绪。数据库、草稿和安装密钥保留。已有平台账号时，不允许简单替换邮箱域名。
+
+首次接通后，在面板绑定一个**已有的普通邮箱**作为本部署的运营身份：填写该邮箱、它的密码和外部恢复邮箱。服务器先验证邮箱所有权与普通用户角色，再建立本地运营关联；不修改该账号的 Stalwart 管理员权限或密码。Stalwart 管理员及带系统权限的服务身份不能作为此处的普通运营邮箱。
+
+运营角色仅属于本部署。若需要创建独立的新运营邮箱，使用下文的高级初始化流程，不接管已有地址。
+
+## 4. 公网 HTTP 的安全管理入口
+
+本节工具运行在管理员自己的电脑，服务器只使用已有 SSH；不在服务器安装 Node 或代理。
+
+管理员电脑需要 Node.js 24 和 OpenSSH。下载该版本的 `deploy/admin-access.mjs`，运行：
 
 ```sh
-docker compose run --rm --no-deps --pull never mail-web --init-operator operator@iqwq.com your-existing-external@example.net /app/secrets/operator.initial-password
+node admin-access.mjs \
+  --ssh USER@SERVER \
+  --identity /path/to/ssh-key \
+  --origin http://YOUR_SERVER_IP:YOUR_PORT \
+  --port 4204
 ```
 
-请替换外部邮箱；运营角色只存在于平台，Stalwart 中仍是普通邮箱用户。命令在上游结果不明时保留待核对记录，不自动接管、删除或重复创建账号。初始化后应改密并移走服务器上的初始密码文件；应用运行不需要该文件。
+打开工具输出的本地链接，输入安装管理令牌。它通过 SSH 加密转发，并把最终公网来源预填入“网站访问地址”。代理只监听回环，检查本地 Host 和 Origin，再转发到固定目标；不记录请求正文。结束后按 Ctrl+C 关闭。这个临时通道不会把公网 HTTP 用户入口变成 HTTPS。
 
-## 身份和邮件
+已有可信 HTTPS 入口时，直接通过它打开面板即可，不需要此工具。
 
-用户密码仅由 Stalwart 管理。登录时创建 8 小时到期的用户级 API 凭据，AES-GCM 加密保存在 SQLite；浏览器仅持有不透明会话 Cookie。空闲期限 30 分钟，写入请求校验 Origin 和 CSRF。运营身份和普通邮箱分权，邮件 API 使用该用户本人的凭据。
+## 5. 目录服务、注册与提交策略
 
-邮箱、邮件、草稿和附件以 Stalwart 为准。数据库仅保存身份关联、验证、会话、计数、任务、审计和幂等记录。结果未知的邮件提交只能查询核对，不自动重新发送。服务器接受不表示收件人已送达。
+现有 Stalwart 的管理对象通过 JMAP 管理 API 访问。操作界面名称以所部署版本为准，参见 [Stalwart 管理 API](https://stalw.art/docs/management/) 和 [账号管理](https://www.stalw.art/docs/auth/accounts/manage/)。
 
-提交 Hook 使用 SQLite 原子计数，并限定到平台账号。新账号在 Hook 范围同步前禁止协议认证；Stalwart 中的范围规则在应用停机时仍保留。必须完成 SMTP、原生 JMAP、Webmail、服务故障和重启验收后才设置 `MTA_POLICY_VERIFIED=true`。该开关是部署验收声明，不会代替验收。
+建议创建独立的普通服务身份，只启用：
 
-注册还需要 Turnstile Site Key/Secret、有效验证邮件账号和受控外部邮箱往返测试。最后由运营后台开放注册。当前验收未完成，保持关闭。
+- 账号管理：`sysAccountCreate`、`sysAccountGet`、`sysAccountQuery`、`sysAccountUpdate`。
+- 域名读取：`sysDomainGet`、`sysDomainQuery`。
+- 使用提交策略时：`sysMtaHookGet`、`sysMtaHookUpdate`、`sysActionCreate`、`actionReloadSettings`。
 
-## 更新、备份和恢复
+为它创建专用 API 密钥。运行时不保存 Stalwart 管理员密码。不要将带系统权限的身份当作个人邮箱使用。
+
+公开注册还需要在面板的折叠分组中配置：
+
+1. 验证邮件身份：普通发件账号 ID、对应 API 密钥和完整发件地址。
+2. Turnstile：Site Key 与 Secret；外部验证服务需要匹配实际网站来源。
+3. 专用于本部署的 MTA Hook：ID 和共享密钥。不要共用其他应用的 Hook；其回调必须能够从 Stalwart 到达本部署的 `/internal/mta-hook`。
+4. 实际验证 SMTP、原生 JMAP 与 Webmail 的限额、应用停机时的失败关闭行为和重启持久性。
+
+`deploy/bootstrap-stalwart.sh` 与 `deploy/setup-hook.sh` 是可选高级辅助脚本。它们只在安装目录写入项目文件，通过 Stalwart API 创建独立服务身份和新 Hook，不改管理员密码。必须显式提供 `MAIL_DOMAIN`、`STALWART_ADMIN_EMAIL`、临时管理凭据，以及 Stalwart 可达的 `MTA_HOOK_URL`。域名和回调地址没有部署站点默认值。现有名称冲突时拒绝接管。临时管理凭据应在结束后撤销。
+
+完成真实提交协议验收后，显式记录验收状态：
 
 ```sh
-sh /workapps/mail-web/deploy/mail-web.sh status
-sh /workapps/mail-web/deploy/mail-web.sh backup
-sh /workapps/mail-web/deploy/mail-web.sh update v0.1.0-alpha.3
-sh /workapps/mail-web/deploy/mail-web.sh restore /workapps/mail-web/backups/<snapshot>
+sh "$INSTALL_DIR/deploy/mail-web.sh" policy-verified true
+# 撤销验收声明：
+sh "$INSTALL_DIR/deploy/mail-web.sh" policy-verified false
 ```
 
-数据库备份使用 `VACUUM INTO` 一致性快照，包含已提交 WAL 数据；配置和密钥一并保存，备份属于敏感文件。恢复先停服务、校验文件、保存原数据库，再恢复匹配版本并撤销恢复出的会话。迁移不保证向后兼容，回滚要求匹配的更新前备份及本地旧镜像。工具不自动清理历史备份、业务数据或旧镜像。请自行维护项目目录之外的离线备份副本。
+这是部署人的验收声明，不代替协议测试。连接或 Hook 参数变化会使声明失效。条件齐备后，再由运营后台开放注册；不满足条件时保持关闭。
 
-## 开发与检查
+高级创建新运营邮箱：在本安装 `secrets/operator.initial-password` 写入至少 16 字符的初始密码，使用已配置的目录服务及专属 Hook 执行：
 
 ```sh
-corepack enable
+docker compose --project-directory "$INSTALL_DIR" -f "$INSTALL_DIR/compose.yaml" \
+  run --rm --no-deps --pull never mail-web \
+  --init-operator OPERATOR_EMAIL EXTERNAL_RECOVERY_EMAIL /app/secrets/operator.initial-password
+```
+
+命令使用本部署配置的域名，拒绝接管已有地址；结果未知时保留待核对记录，不重复创建。完成后轮换初始密码并移走明文交接文件。
+
+## 6. CLI 更新、备份和恢复
+
+以下命令可从任意工作目录调用；数据位置始终按已安装脚本的父目录解析。
+
+```sh
+sh "$INSTALL_DIR/deploy/mail-web.sh" version
+sh "$INSTALL_DIR/deploy/mail-web.sh" status
+sh "$INSTALL_DIR/deploy/mail-web.sh" check-update vNEXT_VERSION
+sh "$INSTALL_DIR/deploy/mail-web.sh" backup
+sh "$INSTALL_DIR/deploy/mail-web.sh" update vNEXT_VERSION
+sh "$INSTALL_DIR/deploy/mail-web.sh" restart
+```
+
+更新先下载、验证和导入新镜像，再停止本安装、保存一致性快照、替换发布配置并启动。域名、站点名称、密钥、数据库和监听设置不会被发布包中的示例值覆盖。管理脚本也随已校验的发布包更新。不执行 `docker pull`、镜像清理或业务数据清理。
+
+更新失败时保留文件和快照，并停止失败服务；按输出检查 `logs/`。数据库迁移不保证向后兼容，回滚须恢复匹配的更新前备份和旧镜像：
+
+```sh
+sh "$INSTALL_DIR/deploy/mail-web.sh" restore "$INSTALL_DIR/backups/SNAPSHOT"
+```
+
+备份使用 SQLite `VACUUM INTO` 一致性快照，包含已提交 WAL 数据；同时保存加密配置、安装密钥和 Compose 文件。恢复前校验文件，并把原数据库移到本安装的 `backups/pre-restore-*`，恢复后撤销旧会话。恢复到新的安装目录时，将快照复制到新目录的 `backups/` 中，可通过 `MAIL_WEB_CONTAINER_NAME=NEW_NAME` 选择一个未占用的容器名。不要直接恢复到正在运行的另一个项目目录。
+
+备份包含敏感密钥，应保存独立的离线副本。丢失 `secrets/session.key` 将无法解密运行配置或会话。CLI 不自动删除历史快照、发布包和本地镜像。
+
+## 7. 数据与边界
+
+| 相对路径 | 内容 |
+|---|---|
+| `.env` | 镜像版本、容器名、监听和其他基础设施选项 |
+| `config/runtime.enc` | 加密的站点与 Stalwart 配置 |
+| `config/installed-release.json` | 已安装产物的版本、架构和镜像标识 |
+| `data/db` | SQLite、WAL 与 SHM |
+| `data/staging` | 附件暂存 |
+| `secrets` | 安装管理令牌、加密密钥及可选服务密钥 |
+| `logs` | 应用轮转日志 |
+| `backups` | 一致性快照与恢复前文件 |
+| `releases` | 校验后的下载包与发布内容 |
+
+Compose 只挂载本安装的相对目录；安装器不写固定全局工作路径。Docker 引擎本身的镜像层、网络和容器元数据属于已有 Docker 基础设施。应用关闭 Docker JSON 日志，业务日志写入相对 `logs/`。
+
+CLI 校验容器的 Compose 工作目录归属，拒绝操作属于其他安装的同名容器；托管目录中的符号链接也会被拒绝。不会改其他应用、DNS、反代或邮件服务器的文件。
+
+用户密码由 Stalwart 管理。Web 会话使用加密保存的限时上游凭据，写操作检查精确 Origin 和 CSRF。HTTPS 使用 Secure、HttpOnly 的 `__Host-` 会话 Cookie；显式启用的 HTTP 使用独立 Cookie 名称，不把它宣称为安全上下文。写信的幂等 ID 使用浏览器加密随机源，兼容显式 HTTP 下没有 `randomUUID()` 的情况，见 [Web Crypto 说明](https://developer.mozilla.org/en-US/docs/Web/API/Crypto/getRandomValues)。
+
+## 8. 构建与发布维护
+
+```sh
 pnpm --dir frontend install --frozen-lockfile
-node frontend/tooling/check-boundaries.mjs
-node frontend/tooling/check-boundaries-fixtures.mjs
 pnpm --dir frontend typecheck
 pnpm --dir frontend build
+node frontend/tooling/check-boundaries.mjs
+node frontend/tooling/check-boundaries-fixtures.mjs
+node tooling/check-persistence.mjs
+node --test tests/scroll-hint.test.mjs tests/motion-styles.test.mjs tests/operation-id.test.mjs tests/admin-access.test.mjs
 cargo fmt --all -- --check
 cargo test --locked --workspace
 cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -79,8 +186,8 @@ cargo run --locked -p mail-web -- --openapi > backend/contract/openapi.json
 pnpm --dir frontend exec openapi-typescript ../backend/contract/openapi.json -o apps/web/src/lib/generated-api.ts
 ```
 
-API 契约由 Rust 类型及 Utoipa 注解生成，位于 `backend/contract/openapi.json`；生成前端类型不得手改。接口不暴露通用 JMAP 代理。真实 Stalwart 隔离测试工具位于 `tests/`，不使用生产凭据，不替代外部往返验收。
+API 契约从 Rust/Utoipa 生成，生成文件不手改。GitHub Actions 完成检查与隔离 Stalwart 测试后，版本标签或带 `[release-preview]` 的 main 提交会发布：`mail-web-linux-amd64.tar.gz`、`SHA256SUMS` 和 `release-manifest.json`。维护者应更新 `release-version.txt` 为新的唯一版本，不覆盖已发布版本。稳定版仍受 `docs/acceptance.json` 门禁约束。
 
-前端基础包及架构门禁来自 `reina0721/console-web` 提交 `7a159d8908120f34e6444df932496cf1dc273349`。原项目未修改。未引入原项目的 Mock 认证配置或业务 Surface。邮箱与运营页面在 `frontend/apps/web/src/features`，App Router 固定页面位于 `src/app`。
+发布包含完整镜像、CLI、Compose、教程和接口契约。SHA-256 用于验证下载完整性，发布来源仍依赖 GitHub 仓库和发布权限。发布后 CI 再从公开直链执行干净安装、重复安装、备份和恢复；失败的发布会被转为草稿。
 
-GitHub Actions 检查成功后，版本标签生成镜像归档、校验值及包含实际 SQLite 版本的清单。预发布版本明确标为开发预览；稳定版发布受到 `docs/acceptance.json` 门禁约束。
+前端基础包来自 `reina0721/console-web` 提交 `7a159d8908120f34e6444df932496cf1dc273349`。HeroUI／React Aria 是 UI adapter 的底层实现。组件规范与动效检查页位于 `/ui-elements/`，详见 [组件检查记录](docs/ui-component-review.md)。

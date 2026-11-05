@@ -46,7 +46,7 @@ export function DatePickerField({
           )}
         </DateField.Input>
         <DateField.Suffix>
-          <DatePicker.Trigger className="grid size-9 place-items-center rounded-control text-ink-muted hover:bg-surface-muted">
+          <DatePicker.Trigger aria-label={calendarLabel} className="grid size-9 place-items-center rounded-control text-ink-muted hover:bg-surface-muted">
             <DatePicker.TriggerIndicator className="size-4" />
           </DatePicker.Trigger>
         </DateField.Suffix>

@@ -11,6 +11,7 @@ export type CheckboxFieldProps = Readonly<{
   labelVisibility?: 'visible' | 'screen-reader';
   description?: string;
   checked: boolean;
+  indeterminate?: boolean;
 }> &
   CheckboxChangeProps;
 
@@ -19,6 +20,7 @@ export function CheckboxField({
   labelVisibility = 'visible',
   description,
   checked,
+  indeterminate = false,
   disabled = false,
   onCheckedChange,
 }: CheckboxFieldProps) {
@@ -30,11 +32,12 @@ export function CheckboxField({
       className="ui-checkbox-field w-full min-w-0 text-sm"
       isDisabled={disabled}
       isSelected={checked}
+      isIndeterminate={indeterminate}
       {...(onCheckedChange ? { onChange: onCheckedChange } : {})}
     >
-      <Checkbox.Content className="ui-choice-content">
-        <Checkbox.Control className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-control border border-border-strong bg-surface text-on-brand">
-          <Checkbox.Indicator className="pointer-events-none">✓</Checkbox.Indicator>
+      <Checkbox.Content className="ui-checkbox-content">
+        <Checkbox.Control className="ui-checkbox-control" data-state={indeterminate ? 'mixed' : checked ? 'selected' : 'empty'}>
+          <Checkbox.Indicator className="ui-checkbox-indicator" />
         </Checkbox.Control>
         <span className={labelVisibility === 'screen-reader' ? 'sr-only' : 'flex min-w-0 flex-col items-start'}>
           <span className="block font-semibold text-ink">{label}</span>

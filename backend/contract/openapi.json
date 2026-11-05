@@ -825,6 +825,107 @@
         }
       }
     },
+    "/api/v1/installation": {
+      "get": {
+        "tags": [
+          "installation"
+        ],
+        "operationId": "status",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/installation/config": {
+      "get": {
+        "tags": [
+          "installation"
+        ],
+        "operationId": "read_config",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Maintenance token or operator session required"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "installation"
+        ],
+        "operationId": "save_config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid configuration"
+          },
+          "401": {
+            "description": "Authorization required"
+          }
+        }
+      }
+    },
+    "/api/v1/installation/operator": {
+      "post": {
+        "tags": [
+          "installation"
+        ],
+        "operationId": "enroll_operator",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Existing ordinary mailbox enrolled as platform operator"
+          },
+          "400": {
+            "description": "Ordinary account in the configured domain required"
+          }
+        }
+      }
+    },
     "/api/v1/mailboxes": {
       "get": {
         "tags": [],
@@ -1361,6 +1462,99 @@
           }
         }
       },
+      "ConfigurationInput": {
+        "type": "object",
+        "required": [
+          "brand",
+          "domain",
+          "publicOrigin",
+          "stalwartUrl"
+        ],
+        "properties": {
+          "brand": {
+            "type": "string"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "domainId": {
+            "type": "string"
+          },
+          "hookId": {
+            "type": "string"
+          },
+          "hookSecret": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "notificationAccount": {
+            "type": "string"
+          },
+          "notificationEmail": {
+            "type": "string"
+          },
+          "notificationKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "provisioningKey": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "publicOrigin": {
+            "type": "string"
+          },
+          "stalwartUrl": {
+            "type": "string"
+          },
+          "turnstileSecret": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "turnstileSiteKey": {
+            "type": "string"
+          }
+        }
+      },
+      "ConfigurationView": {
+        "type": "object",
+        "required": [
+          "settings",
+          "provisioningKeySet",
+          "notificationKeySet",
+          "hookSecretSet",
+          "turnstileSecretSet",
+          "policyVerified"
+        ],
+        "properties": {
+          "hookSecretSet": {
+            "type": "boolean"
+          },
+          "notificationKeySet": {
+            "type": "boolean"
+          },
+          "policyVerified": {
+            "type": "boolean"
+          },
+          "provisioningKeySet": {
+            "type": "boolean"
+          },
+          "settings": {
+            "$ref": "#/components/schemas/ConfigurationInput"
+          },
+          "turnstileSecretSet": {
+            "type": "boolean"
+          }
+        }
+      },
       "CredentialInput": {
         "type": "object",
         "required": [
@@ -1439,6 +1633,37 @@
           }
         }
       },
+      "InstallationStatus": {
+        "type": "object",
+        "required": [
+          "configured",
+          "needsOperator",
+          "brand",
+          "domain",
+          "version",
+          "instanceId"
+        ],
+        "properties": {
+          "brand": {
+            "type": "string"
+          },
+          "configured": {
+            "type": "boolean"
+          },
+          "domain": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string"
+          },
+          "needsOperator": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
       "Login": {
         "type": "object",
         "required": [
@@ -1488,6 +1713,25 @@
           }
         }
       },
+      "OperatorInput": {
+        "type": "object",
+        "required": [
+          "email",
+          "password",
+          "recovery"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "password": {
+            "type": "string"
+          },
+          "recovery": {
+            "type": "string"
+          }
+        }
+      },
       "PasswordInput": {
         "type": "object",
         "required": [
@@ -1527,6 +1771,7 @@
         "required": [
           "enabled",
           "domain",
+          "brand",
           "siteKey",
           "maximumAccounts",
           "attachmentBytes"
@@ -1535,6 +1780,9 @@
           "attachmentBytes": {
             "type": "integer",
             "format": "int64"
+          },
+          "brand": {
+            "type": "string"
           },
           "domain": {
             "type": "string"

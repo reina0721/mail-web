@@ -10,10 +10,10 @@ sh tests/setup-platform.sh
 root="$PWD/tests/runtime/platform"
 docker run --rm --pull never --user 0:0 --network mail-web-test \
  --env-file "$root/app.env" -v "$root:/runtime" "$image" \
- --init-operator operator-v2@iqwq.com operator-recovery@example.net /runtime/secrets/operator.initial-password
+ --init-operator operator-v2@mail.example operator-recovery@example.net /runtime/secrets/operator.initial-password
 MAIL_WEB_TEST_IMAGE="$image" sh tests/start-platform.sh
-for script in platform-integration.py identity-integration.py; do
+for script in installation-integration.py platform-integration.py identity-integration.py; do
  docker run --rm --pull never --network host \
   -v "$PWD:$PWD" -v /var/run/docker.sock:/var/run/docker.sock \
-  -v /usr/bin/docker:/usr/bin/docker:ro -w "$PWD" rust:1 python3 -u "tests/$script"
+  -v /usr/bin/docker:/usr/bin/docker:ro -e MAIL_WEB_TEST_IMAGE="$image" -w "$PWD" rust:1 python3 -u "tests/$script"
 done

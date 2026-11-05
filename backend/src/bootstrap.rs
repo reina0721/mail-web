@@ -6,14 +6,15 @@ pub async fn operator(
     password_file: &str,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let name = email
-        .strip_suffix("@iqwq.com")
-        .ok_or("operator must use iqwq.com")?;
+        .strip_suffix(&format!("@{}", app.services.domain))
+        .ok_or("operator must use the configured mail domain")?;
     if name.len() < 3
         || !name
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
         || !recovery.contains('@')
-        || recovery.ends_with("@iqwq.com")
+        || app.services.domain.is_empty()
+        || app.services.is_local_address(recovery)
     {
         return Err("invalid operator or external recovery email".into());
     }

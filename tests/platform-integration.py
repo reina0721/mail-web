@@ -57,7 +57,7 @@ class Actor:
         for header in headers.get_all("Set-Cookie"):
             cookies.load(header)
         self.cookie = "; ".join(f"{key}={value.value}" for key, value in cookies.items())
-        self.csrf = cookies["__Host-mail_csrf"].value
+        self.csrf = cookies["mail_csrf"].value
 
     def api(self, path, method="GET", body=None, expected=200, content_type=None):
         headers = {"Cookie": self.cookie, "Origin": BASE, "X-CSRF-Token": self.csrf}
@@ -90,7 +90,7 @@ def draft(to, subject):
 
 
 start()
-admin = Actor("operator-v2@iqwq.com", (ROOT / "secrets/operator.initial-password").read_text().strip())
+admin = Actor("operator-v2@mail.example", (ROOT / "secrets/operator.initial-password").read_text().strip())
 service = "Bearer " + (ROOT / "secrets/provisioning.key").read_text().strip()
 name = "isolation-" + secrets.token_hex(4)
 password = secrets.token_hex(24)
@@ -99,7 +99,7 @@ foreign_email = name + "@example.com"
 jmap(service, "x:Account/set", {"create": {"receiver": {"@type": "User", "name": name, "domainId": foreign_domain, "roles": {"@type": "User"}, "credentials": {"0": {"@type": "Password", "secret": secrets.token_hex(24)}}}}})
 domain = (ROOT / "config/domain-id").read_text().strip()
 account = jmap(service, "x:Account/set", {"create": {"fixture": {"@type": "User", "name": name, "domainId": domain, "roles": {"@type": "User"}, "credentials": {"0": {"@type": "Password", "secret": password}}, "quotas": {"maxDiskQuota": 1073741824}}}})["created"]["fixture"]["id"]
-email = name + "@iqwq.com"
+email = name + "@mail.example"
 # Seed only the explicitly named disposable database, with the app stopped.
 # No concurrent SQLite writer or production credential is involved here.
 subprocess.run(["docker", "stop", "mail-web-app-test"], check=True, stdout=subprocess.DEVNULL)

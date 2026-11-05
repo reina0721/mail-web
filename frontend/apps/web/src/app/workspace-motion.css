@@ -1,0 +1,14 @@
+/* Product screen recipes. Durations/easing/distances belong to design tokens. */
+.screen-enter,.admin-section,.compose-workspace{animation:content-fade-in var(--motion-duration-feedback) var(--ease-product)}
+.batch-tools{animation:content-fade-in var(--motion-duration-control) var(--ease-product)}
+.app-notice,.admin-feedback{animation:content-fade-in var(--motion-duration-feedback) var(--ease-product)}
+.folder-link,.row-star,.account-mobile-card,.user-identity{transition:color var(--motion-duration-control) var(--ease-product),background-color var(--motion-duration-control) var(--ease-product),border-color var(--motion-duration-control) var(--ease-product)}
+@media(max-width:1199px){
+  .screen-enter{transform:none;transition:transform var(--motion-duration-feedback) var(--ease-product)}
+  @starting-style{
+    .mail-reader.screen-enter{transform:translateX(var(--motion-distance-reveal))}
+    .mail-list.screen-enter{transform:translateX(calc(var(--motion-distance-reveal) * -1))}
+  }
+}
+html:is([data-motion-mode='reduced'],[data-motion-mode='off']) :is(.screen-enter,.admin-section,.compose-workspace,.batch-tools,.app-notice,.admin-feedback,.list-scroll-hint){animation:none;transition:none;transform:none}
+@media(prefers-reduced-motion:reduce){html:not([data-motion-mode='full']) :is(.screen-enter,.admin-section,.compose-workspace,.batch-tools,.app-notice,.admin-feedback,.list-scroll-hint){animation:none;transition:none;transform:none}}

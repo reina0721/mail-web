@@ -67,6 +67,13 @@
 }
 
 :root {
+  --ds-radius-choice: 0.25rem;
+  --ds-choice-border: color-mix(in oklab, var(--ds-ink-muted) 75%, var(--ds-border-strong));
+  --ds-radius-menu: 0.5rem;
+  --ds-radius-dialog: 0.75rem;
+  --ds-elevation-ink: rgb(15 23 42);
+  --ds-shadow-menu: 0 3px 12px color-mix(in oklab, var(--ds-elevation-ink) 12%, transparent);
+  --ds-shadow-dialog: 0 8px 32px color-mix(in oklab, var(--ds-elevation-ink) 16%, transparent);
   color-scheme: light;
   /* @ds-region:root-motion-properties:start */
   /* Motion Inspector 只调整调试倍率，基础档位仍是唯一数值权威。 */

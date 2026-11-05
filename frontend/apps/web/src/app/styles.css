@@ -1,4 +1,8 @@
 @import 'tailwindcss';
 @import '@community-go/design-system/tokens.css';
+@import '@community-go/design-system/motion.css';
 @import '@community-go/ui-adapter/styles.css';
+@import './workspace-base.css';
+@import './workspace-polish.css';
+@import './workspace-motion.css';
 @source '../../../../packages';

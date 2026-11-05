@@ -749,7 +749,9 @@ pub(super) async fn events(State(app): State<Arc<App>>, headers: HeaderMap) -> R
             match chunk{Ok(Some(Ok(_)))=>yield Ok(Event::default().event("sync").data("{}")),_=>break}
         }}
     };
-    Ok(Sse::new(stream)
-        .keep_alive(KeepAlive::default())
-        .into_response())
+    Ok(
+        Sse::new(stream.take_until(SHUTDOWN.clone().cancelled_owned()))
+            .keep_alive(KeepAlive::default())
+            .into_response(),
+    )
 }

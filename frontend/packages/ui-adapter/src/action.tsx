@@ -1,5 +1,5 @@
-import { tv } from '@heroui/styles';
 import { Button as HeroButton } from '@heroui/react/button';
+import { Spinner } from '@heroui/react/spinner';
 import type { ReactNode } from 'react';
 
 type ActionBehavior =
@@ -18,31 +18,7 @@ export type ActionProps = Readonly<{
 }> &
   ActionBehavior;
 
-const actionStyles = tv({
-  base: 'inline-flex rounded-control font-semibold outline-none transition-colors',
-  defaultVariants: {
-    fullWidth: false,
-    size: 'md',
-    variant: 'primary',
-  },
-  variants: {
-    fullWidth: {
-      false: '',
-      true: 'w-full',
-    },
-    size: {
-      lg: 'h-control-lg gap-2.5 px-5 text-base',
-      md: 'h-control gap-2 px-4 text-sm',
-      sm: 'h-control-sm gap-1.5 px-3 text-sm',
-    },
-    variant: {
-      danger: 'bg-danger text-on-danger shadow-sm hover:brightness-95',
-      primary: 'bg-brand text-on-brand shadow-sm hover:bg-brand-strong',
-      quiet: 'bg-transparent text-ink-muted hover:bg-surface-muted hover:text-ink',
-      secondary: 'border border-border bg-surface text-ink shadow-sm hover:bg-surface-muted',
-    },
-  },
-});
+const buttonVariant = { primary: 'primary', secondary: 'outline', quiet: 'ghost', danger: 'danger' } as const;
 
 export function Action({
   children,
@@ -59,18 +35,17 @@ export function Action({
   return (
     <HeroButton
       aria-busy={loading || undefined}
-      className={actionStyles({ fullWidth, size, variant })}
+      className={`ui-action ui-control-${size} ${variant === 'secondary' ? 'ui-action-secondary' : ''}`}
+      fullWidth={fullWidth}
+      size={size}
       isDisabled={disabled}
       isPending={loading}
       type={type}
-      variant="ghost"
+      variant={buttonVariant[variant]}
       {...(onPress ? { onPress } : {})}
     >
       {loading ? (
-        <span
-          aria-hidden="true"
-          className="size-icon-sm animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none"
-        />
+        <Spinner aria-hidden="true" size="sm" />
       ) : leadingIcon ? (
         <span
           aria-hidden="true"

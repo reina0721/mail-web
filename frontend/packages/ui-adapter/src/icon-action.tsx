@@ -1,5 +1,6 @@
-import { tv } from '@heroui/styles';
+import { Tooltip } from '@heroui/react/tooltip';
 import { Button as HeroButton } from '@heroui/react/button';
+import { Spinner } from '@heroui/react/spinner';
 import type { ReactNode } from 'react';
 
 type IconActionBehavior =
@@ -8,6 +9,7 @@ type IconActionBehavior =
 
 export type IconActionProps = Readonly<{
   label: string;
+  variant?: 'outlined' | 'quiet';
   children: ReactNode;
   active?: boolean;
   controls?: string;
@@ -20,73 +22,45 @@ export type IconActionProps = Readonly<{
 }> &
   IconActionBehavior;
 
-const iconActionStyles = tv({
-  base: 'shrink-0 rounded-control border outline-none transition-colors',
-  compoundVariants: [
-    {
-      active: true,
-      class: 'border-brand bg-brand-soft text-brand',
-      tone: 'neutral',
-    },
-  ],
-  defaultVariants: {
-    active: false,
-    size: 'md',
-    tone: 'neutral',
-  },
-  variants: {
-    active: {
-      false: '',
-      true: '',
-    },
-    size: {
-      md: 'size-control min-w-control',
-      sm: 'size-control-sm min-w-control-sm',
-    },
-    tone: {
-      danger: 'border-danger/35 bg-danger-soft text-danger hover:bg-danger/15',
-      neutral: 'border-border bg-surface text-ink-muted hover:bg-surface-muted hover:text-ink',
-    },
-  },
-});
-
 export function IconAction({
   label,
   children,
   controls,
   expanded,
   onPress,
-  active = false,
+  active,
   disabled = false,
   loading = false,
   size = 'md',
   tone = 'neutral',
   tooltip = false,
+  tooltipPlacement = 'bottom',
+  variant = 'outlined',
 }: IconActionProps) {
   const tooltipText = typeof tooltip === 'string' ? tooltip : tooltip ? label : undefined;
 
-  return (
+  const button = (
     <HeroButton
       aria-busy={loading || undefined}
       aria-label={label}
-      className={iconActionStyles({ active, size, tone })}
+      aria-pressed={active}
+      className={`ui-icon-action ui-control-${size} ${variant === 'quiet' ? 'ui-icon-quiet' : ''}`}
+      data-tone={tone}
+      size={size}
       isDisabled={disabled}
       isIconOnly
       isPending={loading}
-      variant="ghost"
-      {...(tooltipText ? { title: tooltipText } : {})}
+      variant={active ? 'secondary' : tone === 'danger' ? 'danger-soft' : variant === 'quiet' ? 'ghost' : 'outline'}
       {...(controls ? { 'aria-controls': controls } : {})}
       {...(expanded === undefined ? {} : { 'aria-expanded': expanded })}
       {...(onPress ? { onPress } : {})}
     >
       {loading ? (
-        <span
-          aria-hidden="true"
-          className="size-icon-sm animate-spin rounded-full border-2 border-current border-r-transparent motion-reduce:animate-none"
-        />
+        <Spinner aria-hidden="true" size="sm" />
       ) : (
         children
       )}
     </HeroButton>
   );
+  return tooltipText ? <Tooltip delay={350}>{button}<Tooltip.Content className="ui-icon-tooltip" placement={tooltipPlacement}>{tooltipText}</Tooltip.Content></Tooltip> : button;
 }

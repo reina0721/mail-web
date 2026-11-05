@@ -11,3 +11,5 @@ releases
 tests/runtime
 .env
 frontend/packages/config
+
+/config

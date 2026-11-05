@@ -31,6 +31,7 @@ export type MenuGroup = Readonly<{
 export type MenuButtonProps = Readonly<
   {
     label: ReactNode;
+    variant?: 'outlined' | 'quiet';
     ariaLabel: string;
     header?: ReactNode;
     submenuLayout?: 'adjacent' | 'stacked';
@@ -44,6 +45,7 @@ export type MenuButtonProps = Readonly<
 
 export function MenuButton({
   label,
+  variant = 'outlined',
   ariaLabel,
   items,
   groups,
@@ -87,11 +89,11 @@ export function MenuButton({
           <Dropdown.SubmenuIndicator />
         </Dropdown.Item>
         <Dropdown.Popover
-          className="ui-overlay-surface ui-menu-surface ui-overlay-motion flex min-w-44 flex-col p-1.5"
+          className="ui-overlay-surface ui-menu-surface ui-overlay-motion flex flex-col"
           placement={submenuLayout === 'stacked' ? 'bottom end' : 'end top'}
         >
           <Dropdown.Menu
-            className="min-h-0 max-h-overlay overflow-auto outline-none"
+            className="ui-menu-list min-h-0 max-h-overlay overflow-auto outline-none"
             aria-label={item.label}
             selectionMode="single"
             selectedKeys={[item.selectedId]}
@@ -109,11 +111,11 @@ export function MenuButton({
     );
   return (
     <Dropdown defaultOpen={defaultOpen}>
-      <Dropdown.Trigger aria-label={ariaLabel} className="ui-overlay-trigger">
+      <Dropdown.Trigger aria-label={ariaLabel} className={variant==='quiet'?'ui-overlay-trigger ui-menu-trigger-quiet':'ui-overlay-trigger'}>
         {label}
       </Dropdown.Trigger>
       <Dropdown.Popover
-        className="ui-overlay-surface ui-menu-surface ui-overlay-motion flex min-w-60 flex-col p-1.5"
+        className="ui-overlay-surface ui-menu-surface ui-overlay-motion flex flex-col"
         placement="bottom end"
       >
         <div
@@ -125,7 +127,7 @@ export function MenuButton({
           className="flex min-h-0 flex-col overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
         >
           <Dropdown.Menu
-            className="min-h-0 overflow-visible outline-none"
+            className="ui-menu-list min-h-0 overflow-visible outline-none"
             aria-label={ariaLabel}
             disabledKeys={(groups ? groups.flatMap((group) => group.items) : (items ?? []))
               .filter((item) => 'disabled' in item && item.disabled)
@@ -135,13 +137,13 @@ export function MenuButton({
             {groups
               ? groups.map((group, index) => (
                   <Dropdown.Section key={group.id} id={group.id}>
-                    {index ? <Separator className="my-1 border-border" /> : null}
-                    <Header className="px-3 pb-1 pt-2 text-xs font-semibold text-ink-muted">
+                    {index ? <Separator className="ui-menu-separator" /> : null}
+                    {(group.label||(index===0&&header))&&<Header className="ui-menu-heading">
                       {index === 0 && header ? (
                         <div className="mb-3 border-b border-border pb-3">{header}</div>
                       ) : null}
                       <span>{group.label}</span>
-                    </Header>
+                    </Header>}
                     {group.items.map(renderItem)}
                   </Dropdown.Section>
                 ))

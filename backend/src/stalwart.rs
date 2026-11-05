@@ -22,6 +22,25 @@ pub enum UpstreamError {
 }
 
 impl Stalwart {
+    pub async fn password_session(
+        &self,
+        email: &str,
+        password: &str,
+    ) -> Result<Value, UpstreamError> {
+        let response = self
+            .http
+            .get(format!("{}/jmap/session", self.base))
+            .basic_auth(email, Some(password))
+            .send()
+            .await?;
+        if matches!(response.status().as_u16(), 401 | 403) {
+            return Err(UpstreamError::Authentication);
+        }
+        if !response.status().is_success() {
+            return Err(UpstreamError::Protocol);
+        }
+        Ok(response.json().await?)
+    }
     pub async fn session(&self, key: &str) -> Result<Value, UpstreamError> {
         let response = self
             .http

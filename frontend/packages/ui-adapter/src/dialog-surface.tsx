@@ -1,4 +1,4 @@
-import { Button as HeroButton } from '@heroui/react/button';
+import { Action } from './action';
 import { Modal } from '@heroui/react/modal';
 import { OverlayTriggerAction } from './overlay-trigger';
 import { useRef, useState, type ReactNode } from 'react';
@@ -77,19 +77,18 @@ export function DialogSurface({
             <Modal.Footer className="flex shrink-0 flex-wrap justify-end gap-3 border-t border-border px-6 py-4">
               <Modal.CloseTrigger
                 aria-label={cancelLabel}
-                className="static inline-flex min-h-control w-auto min-w-20 items-center justify-center rounded-control border border-border bg-surface px-4 text-sm font-semibold leading-none text-ink shadow-sm hover:bg-surface-muted"
+                className="static inline-flex min-h-control w-auto min-w-20 items-center justify-center rounded-control border border-border bg-surface px-4 text-sm font-semibold leading-none text-ink shadow-none hover:bg-surface-muted"
                 isDisabled={pending}
               >
                 {cancelLabel}
               </Modal.CloseTrigger>
-              <HeroButton
-                className="inline-flex min-h-control items-center justify-center rounded-control bg-brand px-4 text-sm font-semibold text-on-brand hover:bg-brand-strong"
-                isDisabled={confirmDisabled || pending}
-                isPending={pending}
+              <Action
+                disabled={confirmDisabled || pending}
+                loading={pending}
                 onPress={() => void confirm()}
               >
                 {confirmLabel}
-              </HeroButton>
+              </Action>
             </Modal.Footer>
           </Modal.Dialog>
         </Modal.Container>

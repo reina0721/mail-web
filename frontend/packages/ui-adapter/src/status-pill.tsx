@@ -18,7 +18,7 @@ const toneClass: Record<StatusTone, string> = {
 export function StatusPill({ children, tone = 'neutral' }: StatusPillProps) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${toneClass[tone]}`}
+      className={`ui-status-pill inline-flex items-center gap-1.5 px-2 py-0.5 text-xs font-medium ${toneClass[tone]}`}
     >
       <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
       {children}

@@ -149,6 +149,9 @@ pub enum Statement {
     BootstrapOperatorInsertPlatformUsers,
     BootstrapOperatorUpdatePlatformUsers,
     BootstrapOperatorUpdatePlatformUsers2,
+    InstallationOperatorCount,
+    InstallationUserCount,
+    InstallationEnrollOperator,
     MainLoginSelectPlatformUsers,
     MainLogoutInsertCredentialRevocations,
     MainRevocationsDeleteCredentialRevocations,
@@ -373,6 +376,13 @@ impl Statement {
             }
             Self::BootstrapOperatorSelectPlatformUsers => {
                 "SELECT operator,status FROM platform_users WHERE email=?"
+            }
+            Self::InstallationOperatorCount => {
+                "SELECT COUNT(*) FROM platform_users WHERE operator=1 AND status='active'"
+            }
+            Self::InstallationUserCount => "SELECT COUNT(*) FROM platform_users",
+            Self::InstallationEnrollOperator => {
+                "INSERT INTO platform_users(id,email,recovery_email,stalwart_id,status,operator) VALUES (?,?,?,?,'active',1)"
             }
             Self::BootstrapOperatorInsertPlatformUsers => {
                 "INSERT INTO platform_users(id,email,recovery_email,status,operator) VALUES (?,?,?,'provisioning',1)"

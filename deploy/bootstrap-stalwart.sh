@@ -14,8 +14,10 @@ else
   test -n "$admin"
 fi
 url=${STALWART_BOOTSTRAP_URL:-http://127.0.0.1:18080/jmap/}
-admin_email=${STALWART_ADMIN_EMAIL:-admin@iqwq.com}
-domain=${MAIL_DOMAIN:-iqwq.com}
+: "${STALWART_ADMIN_EMAIL:?set the existing Stalwart administrator identity}"
+admin_email=$STALWART_ADMIN_EMAIL
+: "${MAIL_DOMAIN:?set the deployment mail domain}"
+domain=$MAIL_DOMAIN
 # Keep curl invocation separate so shell arguments cannot be lost in a wrapper.
 admin_request(){
  if test -n "${bearer:-}"; then curl --fail --silent --show-error -H "Authorization: Bearer $bearer" -H 'Content-Type: application/json' "$url" --data-binary @-;

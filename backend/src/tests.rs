@@ -9,7 +9,7 @@ async fn session_isolation_csrf_revocation_and_operator_boundary() {
     let vault = Vault::new(&[9; 32]).unwrap();
     for (name, sid) in [("alice", "session-a"), ("bob", "session-b")] {
         let user = Uuid::new_v4();
-        sqlx::query("INSERT INTO platform_users(id,email,recovery_email,stalwart_id,status) VALUES (?,?,?,?,'active')").bind(user).bind(format!("{name}@iqwq.com")).bind(format!("{name}@example.net")).bind(name).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO platform_users(id,email,recovery_email,stalwart_id,status) VALUES (?,?,?,?,'active')").bind(user).bind(format!("{name}@mail.example")).bind(format!("{name}@example.net")).bind(name).execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO sessions(id_hash,user_id,csrf_hash,upstream_key,upstream_key_id,expires_at) VALUES (?,?,?,?,?,?)").bind(hash(sid)).bind(user).bind(hash("csrf")).bind(vault.seal(name.as_bytes()).unwrap()).bind(name).bind(db::now()+3600000).execute(&pool).await.unwrap();
     }
     let app = Arc::new(App {
@@ -20,7 +20,10 @@ async fn session_isolation_csrf_revocation_and_operator_boundary() {
         },
         vault,
         origin: "https://mail.example.com".into(),
-        services: config::Services::default(),
+        services: config::Services {
+            domain: "mail.example".into(),
+            ..config::Services::default()
+        },
     });
     let routes = Router::new()
         .merge(account::routes())
@@ -100,7 +103,7 @@ async fn session_isolation_csrf_revocation_and_operator_boundary() {
             .unwrap();
     assert!(revoked.is_none(), "Alice must not revoke Bob's session");
     let alice: Uuid =
-        sqlx::query_scalar("SELECT id FROM platform_users WHERE email='alice@iqwq.com'")
+        sqlx::query_scalar("SELECT id FROM platform_users WHERE email='alice@mail.example'")
             .fetch_one(&app.db)
             .await
             .unwrap();

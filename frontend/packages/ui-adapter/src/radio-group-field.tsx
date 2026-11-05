@@ -113,8 +113,8 @@ export function RadioGroupField({
                   </span>
                 ) : null
               ) : !comparison && !(compact && option.icon) ? (
-                <Radio.Control className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border border-border-strong bg-surface group-data-[selected]:border-brand">
-                  <Radio.Indicator className="pointer-events-none">
+                <Radio.Control className="ui-radio-control mt-0.5 grid size-5 shrink-0 place-items-center rounded-full border border-border-strong bg-surface group-data-[selected]:border-brand">
+                  <Radio.Indicator className="ui-radio-indicator pointer-events-none">
                     {/* 项目单选 dot：几何固定 10×10；仅 selected 时可见（group 根 data-selected）。
                     非空子节点避免 vendor `.radio__indicator:empty::before` 的默认 dot。 */}
                     <span

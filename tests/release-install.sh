@@ -20,7 +20,7 @@ sh "$root/deploy/mail-web.sh" stop
 docker run --rm -i --pull never -v "$root/data:/data" "$python_image" python3 - <<'PY'
 import sqlite3,uuid,time
 with sqlite3.connect('/data/db/mail-web.sqlite') as db:
- db.execute("INSERT INTO platform_users(id,email,recovery_email,status,created_at) VALUES (?,?,?,'provisioning',?)",(uuid.uuid4().bytes,'release-fixture@iqwq.com','release-fixture@example.net',int(time.time()*1000)))
+ db.execute("INSERT INTO platform_users(id,email,recovery_email,status,created_at) VALUES (?,?,?,'provisioning',?)",(uuid.uuid4().bytes,'release-fixture@mail.example','release-fixture@example.net',int(time.time()*1000)))
 PY
 sh "$root/deploy/mail-web.sh" start
 sh "$root/deploy/mail-web.sh" backup > "$root/backup-path.txt"
@@ -40,13 +40,13 @@ mkdir -p "$restore/deploy" "$restore/backups/snapshot" "$restore/data/db"
 cp "$root/deploy/mail-web.sh" "$restore/deploy/"
 cp -R "$snapshot/." "$restore/backups/snapshot/"
 cp "$snapshot/.env" "$snapshot/compose.yaml" "$restore/"
-sh "$restore/deploy/mail-web.sh" restore "$restore/backups/snapshot"
+MAIL_WEB_CONTAINER_NAME=mail-web-release-restored sh "$restore/deploy/mail-web.sh" restore "$restore/backups/snapshot"
 curl -fsS http://127.0.0.1:19191/api/v1/health/ready
 test -s "$restore/data/db/mail-web.sqlite"
 docker run --rm -i --pull never -v "$restore/data:/data:ro" "$python_image" python3 - <<'PY'
 import sqlite3
 with sqlite3.connect('file:/data/db/mail-web.sqlite?mode=ro',uri=True) as db:
- assert db.execute("SELECT count(*) FROM platform_users WHERE email='release-fixture@iqwq.com'").fetchone()[0]==1
+ assert db.execute("SELECT count(*) FROM platform_users WHERE email='release-fixture@mail.example'").fetchone()[0]==1
  assert db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
 PY
 test "$(sha256sum "$restore/secrets/session.key" | cut -d' ' -f1)" = "$original"

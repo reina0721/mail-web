@@ -41,13 +41,13 @@ export function ComboField({
       {...(value !== undefined ? { selectedKey: value } : {})}
     >
       <Label className="ui-field-label">{label}</Label>
-      <ComboBox.InputGroup>
+      <ComboBox.InputGroup className="ui-field-control ui-combo-control">
         <Input
-          className="ui-field-control min-w-0 flex-1 pe-7"
+          className="ui-combo-input min-w-0 flex-1"
           fullWidth
           placeholder={placeholder}
         />
-        <ComboBox.Trigger />
+        <ComboBox.Trigger aria-label={`${label}：展开选项`} />
       </ComboBox.InputGroup>
       {error ? (
         <FieldError className="ui-field-error">{error}</FieldError>

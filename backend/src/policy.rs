@@ -96,7 +96,7 @@ async fn reserve(app: &App, login: &str, event: &str, count: i64) -> Result<bool
     let row = db::query(db::Statement::PolicyReserveSelectPlatformUsers)
         .bind(&normalized)
         .bind(&normalized)
-        .bind(format!("{normalized}@iqwq.com"))
+        .bind(app.services.address(&normalized))
         .fetch_optional(&mut *tx)
         .await?;
     let Some(row) = row else {
@@ -184,7 +184,7 @@ pub async fn hook(
         .map(|r| r.address.to_lowercase())
         .collect::<std::collections::HashSet<_>>()
         .iter()
-        .filter(|r| !r.ends_with("@iqwq.com"))
+        .filter(|r| !app.services.is_local_address(r))
         .count() as i64;
     if reserve(&app, &sasl.login, &event, count).await? {
         Ok(Json(json!({"action":"accept"})))
@@ -203,7 +203,7 @@ mod tests {
         let root = std::env::temp_dir().join(Uuid::new_v4().to_string());
         let pool = db::connect(&root.join("mail.sqlite")).await.unwrap();
         let id = Uuid::new_v4();
-        sqlx::query("INSERT INTO platform_users(id,email,recovery_email,stalwart_id,status) VALUES (?,'u@iqwq.com','r@example.net','test','active')").bind(id).execute(&pool).await.unwrap();
+        sqlx::query("INSERT INTO platform_users(id,email,recovery_email,stalwart_id,status) VALUES (?,'u@mail.example','r@example.net','test','active')").bind(id).execute(&pool).await.unwrap();
         let app = Arc::new(App {
             db: pool,
             upstream: Stalwart {
@@ -212,13 +212,16 @@ mod tests {
             },
             vault: Vault::new(&[1; 32]).unwrap(),
             origin: "https://localhost".into(),
-            services: crate::config::Services::default(),
+            services: crate::config::Services {
+                domain: "mail.example".into(),
+                ..crate::config::Services::default()
+            },
         });
         let mut tasks = tokio::task::JoinSet::new();
         for i in 0..20 {
             let app = app.clone();
             tasks.spawn(async move {
-                reserve(&app, "u@iqwq.com", &format!("event-{i}"), 1)
+                reserve(&app, "u@mail.example", &format!("event-{i}"), 1)
                     .await
                     .unwrap()
             });
@@ -238,9 +241,9 @@ mod tests {
             rate(&app, "login-test", 1, 60000).await.unwrap_err().0,
             StatusCode::TOO_MANY_REQUESTS
         );
-        assert!(!reserve(&app, "u@iqwq.com", "extra", 1).await.unwrap());
+        assert!(!reserve(&app, "u@mail.example", "extra", 1).await.unwrap());
         assert!(
-            !reserve(&app, "unmanaged@iqwq.com", "unmanaged", 1)
+            !reserve(&app, "unmanaged@mail.example", "unmanaged", 1)
                 .await
                 .unwrap()
         );

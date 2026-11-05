@@ -98,7 +98,7 @@ function buildTabClass(variant: TabsViewVariant, orientation: TabsViewOrientatio
   if (variant === 'soft') {
     // muted 容器内：idle 无圆角融入容器；selected 用 elevated surface（data 变体优先级更高）。
     const selectedSurface =
-      'rounded-none bg-transparent text-ink-muted data-[selected]:rounded-control data-[selected]:bg-surface data-[selected]:text-ink data-[selected]:font-semibold data-[selected]:shadow-sm data-[selected]:border data-[selected]:border-border/70';
+      'rounded-none bg-transparent text-ink-muted data-[selected]:rounded-control data-[selected]:bg-surface data-[selected]:text-ink data-[selected]:font-semibold data-[selected]:shadow-none data-[selected]:border data-[selected]:border-border/70';
     const idle = 'hover:text-ink hover:bg-surface-muted';
     return `${tabBaseClass} ${tabHContentClass} ${selectedSurface} ${idle}`;
   }
@@ -137,7 +137,7 @@ export function TabsView({
   if (selectionEntry.id !== resolvedSelectedId)
     setSelectionEntry({ id: resolvedSelectedId, changed: true });
   const listClass = buildTabListClass(variant, resolvedOrientation);
-  const tabClass = buildTabClass(variant, resolvedOrientation);
+  const tabClass = `ui-tab ui-tab-${variant} ${buildTabClass(variant, resolvedOrientation)}`;
   const isVertical = resolvedOrientation === 'vertical';
   const contentSignature = items
     .map((item) => [item.id, item.label, item.badge, item.disabled].join(':'))

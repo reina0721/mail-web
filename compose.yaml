@@ -1,6 +1,7 @@
 services:
   mail-web:
     image: mail-web:${MAIL_WEB_VERSION:?select an installed release}
+    container_name: ${CONTAINER_NAME:-mail-web}
     pull_policy: never
     restart: unless-stopped
     init: true
@@ -18,6 +19,8 @@ services:
       STAGING_DIR: /app/data/staging
       LOG_DIR: /app/logs
       SESSION_KEY_FILE: /app/secrets/session.key
+      SETUP_TOKEN_FILE: /app/secrets/setup.key
+      RUNTIME_CONFIG_FILE: /app/config/runtime.enc
       PROVISIONING_KEY_FILE: /app/secrets/provisioning.key
       NOTIFICATION_KEY_FILE: /app/secrets/notification.key
       TURNSTILE_SECRET_FILE: /app/secrets/turnstile.key
@@ -26,20 +29,14 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
       - ./backups:/app/backups
-      - ./config:/app/config:ro
+      - ./config:/app/config
       - ./secrets:/app/secrets:ro
     tmpfs:
       - /tmp:size=32m,mode=1777
-    networks: [mail]
     healthcheck:
       test: [CMD, /app/mail-web, --healthcheck]
       interval: 30s
       timeout: 5s
       retries: 3
     logging:
-      driver: json-file
-      options: {max-size: 5m, max-file: "2"}
-networks:
-  mail:
-    external: true
-    name: ${STALWART_NETWORK:-stalwart1_mail}
+      driver: none
