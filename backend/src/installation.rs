@@ -148,6 +148,9 @@ pub(super) async fn status(State(app): State<Arc<App>>) -> Result<Json<Installat
     }))
 }
 pub(crate) async fn authorize(app: &App, headers: &HeaderMap, write: bool) -> Result<()> {
+    // Browser/maintenance authorization belongs to the configured Webmail site,
+    // including while an additional upstream is still unconfigured.
+    let app = app.root.as_deref().unwrap_or(app);
     if let Some(candidate) = headers
         .get("authorization")
         .and_then(|h| h.to_str().ok())
