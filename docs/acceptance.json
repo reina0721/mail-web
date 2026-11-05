@@ -3,7 +3,8 @@
   "evidenceScope": {
     "historicalProductionRelease": "v0.1.0-alpha.3",
     "candidateRelease": "v0.2.0-alpha.10",
-    "candidateStatus": "Registration readiness candidate: 26 local backend tests and type/build/boundary checks passed. Removes legacy attestation from gating and adds configuration-bound automatic/human checks. Final isolated release and production panel verification pending."
+    "candidateStatus": "Published and deployed v0.2.0-alpha.10 to the existing webmail1 installation. Full isolated SMTP/JMAP and identity regression, release installation/restore, type/build/architecture and migration checks passed. Production automatic readiness checks all passed; real owner Turnstile and external-mail receipt remain pending, and registration is still disabled.",
+    "releaseValidation": "https://github.com/reina0721/mail-web/actions/runs/42063599660"
   },
   "verifiedInIsolatedStalwart101": [
     "Real user credentials, mailbox login and operator isolation",
@@ -12,7 +13,7 @@
     "Submission outage fails closed; external incoming remains accepted",
     "Concurrent registration with verified claims and idempotent retry",
     "Password change, single-use recovery claims and device revocation",
-    "Nine backend tests, frontend static build and 20 architecture fixtures",
+    "26 backend tests, 8 frontend/CLI tests, frontend production build and 20 architecture fixtures",
     "Concurrent identical sends and lost-response reconciliation produce one submission",
     "HTML-only reply text, active content removal and submitted-draft editing guard",
     "Client credentials cannot create access keys; mail-only accounts cannot use Sieve/vacation",
@@ -35,8 +36,8 @@
     "Production Turnstile token verification through the final HTTPS origin",
     "Broader screen-reader and browser/device accessibility coverage",
     "Public-origin signup including an actual Turnstile token and externally delivered verification code",
-    "Real Cloudflare API-token widget creation for this deployment; requires an owner-supplied account-scoped Token",
-    "Current ordinary operator sign-in using the historical local credential handoff did not succeed before this update; no password reset was performed, and live panel verification used the installation capability"
+    "This update reused the existing Turnstile Widget; production widget creation and API-token validation were not repeated",
+    "Ordinary operator sign-in was not retested in alpha.10; real screenshots use the installation capability, and no password reset was performed"
   ],
   "verifiedInGenericDeployment": [
     "Fresh artifact-only installation in a user-selected directory, custom container name and explicit IP/port binding",
@@ -49,6 +50,10 @@
     "Guided alpha.5 configuration automatically reads saved website origin and secrets-present flags; domain, account, Hook and schema queries succeeded against the existing production Stalwart; advertised domain and API-key deep links verified in the real panel",
     "Artifact-only CLI update from alpha.4 to alpha.5 preserved the exact encrypted runtime configuration, encryption key and existing session; original seven container IDs unchanged",
     "Automatic alpha.6 deployed using the existing artifact-only CLI; before/after consistent snapshots show identical platform-user mappings and exact pre-update encrypted runtime configuration",
-    "Actual automatic configuration panel verified through the installation capability at 1440x900 and 390x844; stored branding, mailbox domain and real public origin retained; bootstrap administrator and Cloudflare fields empty"
+    "Actual automatic configuration panel verified through the installation capability at 1440x900 and 390x844; stored branding, mailbox domain and real public origin retained; bootstrap administrator and Cloudflare fields empty",
+    "Artifact-only CLI update from alpha.6 to alpha.10 preserved the exact encrypted runtime configuration, encryption key, existing account mapping, registration policy and outbound counters; matching before/after consistent snapshots verified and all seven SQLite migrations succeeded",
+    "All seven production automatic readiness items passed using saved runtime credentials: configuration, directory permissions, domain, sender JMAP identity/mailboxes, dedicated Hook configuration/scope, callback authentication and Turnstile configuration. Human verification and external receipt have not been claimed. Registration requested/effective states both remain false",
+    "Original seven other containers retained their IDs. No test accounts or domains were created, no existing mailbox limits or other applications’ Hooks were modified, and no production outage test was performed",
+    "Actual alpha.10 setup/readiness panel inspected at 1440x900 and 390x844 using the protected installation capability, with no horizontal overflow and visible keyboard focus; isolated operations UI additionally checked at 1024x768, in light/dark themes, with slow checks, failures, manual enablement and dependency-paused state"
   ]
 }
