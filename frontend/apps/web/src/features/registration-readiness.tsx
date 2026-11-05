@@ -3,7 +3,7 @@ import {useEffect,useState} from 'react';
 import {Action} from '@community-go/ui-adapter/action';
 import {api,errorMessage} from '../lib/api';
 type Report={requestedEnabled:boolean;effectiveEnabled:boolean;ready:boolean;items:{id:string;label:string;status:string;reason?:string}[];checkedAt:number;humanVerifiedAt:number;releaseVersion:string;protocolScope:string};
-const reasons:Record<string,string>={configuration_fields_missing:'请在配置页补齐运行凭据',required_permissions_missing:'运行密钥缺少必要权限，请重新授权修复',credential_rejected:'运行凭据已失效，请在配置页更新',domain_mismatch:'域名名称与保存的 ID 不一致',sender_identity_missing:'未找到匹配的验证邮件发件身份',hook_configuration_mismatch:'Hook 的回调、认证、阶段或账号范围不匹配',callback_unreachable:'无法访问配置的网站回调',callback_authentication_failed:'网站回调认证未通过',turnstile_missing:'请配置 Turnstile Site Key 和 Secret'};
+const reasons:Record<string,string>={configuration_fields_missing:'请在配置页补齐运行凭据',required_permissions_missing:'运行密钥缺少必要权限，请重新授权修复',credential_rejected:'运行凭据已失效，请在配置页更新',domain_mismatch:'域名名称与保存的 ID 不一致',sender_mailbox_missing:'验证码发件账号没有可用的邮件文件夹',sender_identity_missing:'未找到匹配的验证邮件发件身份',hook_configuration_mismatch:'Hook 的回调、认证、阶段或账号范围不匹配',callback_unreachable:'无法访问配置的网站回调',callback_authentication_failed:'网站回调认证未通过',turnstile_missing:'请配置 Turnstile Site Key 和 Secret'};
 export function RegistrationReadiness({token='',requestedEnabled,onChange}:{token?:string;requestedEnabled?:boolean;onChange?:(ready:boolean)=>void}){
  const[value,setValue]=useState<Report|null>(null),[pending,setPending]=useState(false),[error,setError]=useState(''),[url,setUrl]=useState('');
  const headers=()=>token?{Authorization:'Bearer '+token}:undefined;

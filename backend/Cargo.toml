@@ -1,6 +1,6 @@
 [package]
 name = "mail-web"
-version = "0.2.0-alpha.9"
+version = "0.2.0-alpha.10"
 edition = "2024"
 
 [dependencies]

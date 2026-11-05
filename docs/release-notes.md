@@ -1,4 +1,4 @@
-Mail Web v0.2.0-alpha.9
+Mail Web v0.2.0-alpha.10
 
 Replaces the manual protocol-attestation registration gate with deployment readiness checks. Setup and operations share a detailed checklist; domains, runtime permissions, sender identities, Hook configuration/scope and callback authentication are inspected without creating resources. A purpose-limited check page at the configured website origin verifies real Turnstile and actual external-mail receipt before registration can be enabled manually.
 

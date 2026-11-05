@@ -130,6 +130,13 @@ fn scope_matches(actual: &str, expected: &str) -> bool {
     }
     matches!((names(actual),names(expected)),(Some(a),Some(b)) if a==b)
 }
+fn hook_scope_matches(enable: &Value, expected: &str) -> bool {
+    enable.as_object().is_some_and(|fields| {
+        fields.iter().all(|(key, value)| {
+            key == "else" || (key == "match" && value.as_array().is_some_and(Vec::is_empty))
+        })
+    }) && scope_matches(enable["else"].as_str().unwrap_or_default(), expected)
+}
 pub async fn check(app: &App) -> Result<()> {
     let _guard = CHECK.lock().await;
     let revision = fingerprint(app);
@@ -157,6 +164,7 @@ pub async fn check(app: &App) -> Result<()> {
             &[
                 "sysDomainGet",
                 "sysAccountGet",
+                "sysAccountQuery",
                 "sysAccountCreate",
                 "sysAccountUpdate",
                 "sysMtaHookGet",
@@ -202,6 +210,20 @@ pub async fn check(app: &App) -> Result<()> {
                 ],
             )
             .await?;
+            let mailboxes = app
+                .upstream
+                .call(
+                    &s.notification_key,
+                    "Mailbox/get",
+                    json!({"accountId":s.notification_account,"properties":["id"]}),
+                )
+                .await?;
+            if !mailboxes["list"]
+                .as_array()
+                .is_some_and(|list| !list.is_empty())
+            {
+                return Err(Error(StatusCode::BAD_REQUEST, "sender_mailbox_missing"));
+            }
             let value = app
                 .upstream
                 .call(
@@ -222,7 +244,7 @@ pub async fn check(app: &App) -> Result<()> {
         }
         .await
     );
-    item!("hook","专用 Hook 配置与账号作用范围",async{let value=app.upstream.call(&s.provisioning_key,"x:MtaHook/get",json!({"ids":[s.hook_id],"properties":["id","url","enable","stages","tempFailOnError","httpAuth"]})).await?;let h=&value["list"][0];if h["url"]!=format!("{}/internal/mta-hook",app.origin)||h["stages"]["data"]!=true||h["tempFailOnError"]!=true||h["httpAuth"]["@type"]!="Bearer"||!scope_matches(h["enable"]["else"].as_str().unwrap_or_default(),&policy::scope_expression(app).await?){return Err(Error(StatusCode::BAD_REQUEST,"hook_configuration_mismatch"));}Ok(())}.await);
+    item!("hook","专用 Hook 配置与账号作用范围",async{let value=app.upstream.call(&s.provisioning_key,"x:MtaHook/get",json!({"ids":[s.hook_id],"properties":["id","url","enable","stages","tempFailOnError","httpAuth"]})).await?;let h=&value["list"][0];if h["url"]!=format!("{}/internal/mta-hook",app.origin)||h["stages"]["data"]!=true||h["tempFailOnError"]!=true||h["httpAuth"]["@type"]!="Bearer"||!hook_scope_matches(&h["enable"],&policy::scope_expression(app).await?){return Err(Error(StatusCode::BAD_REQUEST,"hook_configuration_mismatch"));}Ok(())}.await);
     item!(
         "callback",
         "网站回调认证（不代表协议实测）",
@@ -286,6 +308,18 @@ mod tests {
         let expected = "!is_empty(authenticated_as) && contains([\"a\",\"a@example.com\"], to_lowercase(authenticated_as))";
         assert!(scope_matches(
             "!is_empty(authenticated_as) && contains([\"a@example.com\", \"a\"], to_lowercase(authenticated_as))",
+            expected
+        ));
+        assert!(hook_scope_matches(
+            &json!({"else":expected,"match":[]}),
+            expected
+        ));
+        assert!(!hook_scope_matches(
+            &json!({"else":expected,"match":[{"if":"true","then":"true"}]}),
+            expected
+        ));
+        assert!(!hook_scope_matches(
+            &json!({"else":expected,"unknown":"true"}),
             expected
         ));
         for invalid in [

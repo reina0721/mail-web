@@ -6,7 +6,7 @@
     "license": {
       "name": ""
     },
-    "version": "0.2.0-alpha.9"
+    "version": "0.2.0-alpha.10"
   },
   "paths": {
     "/api/v1/account": {
