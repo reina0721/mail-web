@@ -56,7 +56,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
     results = list(executor.map(lambda _: register(), range(4)))
 assert 204 in results and set(results) <= {204, 409}, results
 assert register() == 204
-actor = Actor(name + "@mail.example", password)
+actor = Actor(name + "@mail.example.com", password)
 assert actor.api("/account")["quotaBytes"] == 1073741824
 with namespace["database"]() as db:
     assert db.execute("SELECT count(*) FROM platform_users WHERE email=?", (actor.email,)).fetchone()[0] == 1
@@ -119,12 +119,12 @@ resume_claim = verified_claim(resume_name + "@example.net", "registration")
 upstream_account(resume_name, "mail-web:" + str(resume_id), resume_secret)
 subprocess.run(["docker", "stop", "mail-web-app-test"], check=True, stdout=subprocess.DEVNULL)
 with sqlite3.connect(ROOT / "data/db/mail-web.sqlite") as db:
-    db.execute("INSERT INTO platform_users(id,email,recovery_email,status,challenge_id) VALUES (?,?,?,'provisioning',?)", (resume_id.bytes, resume_name + "@mail.example", resume_name + "@example.net", uuid.UUID(resume_claim["challenge_id"]).bytes))
+    db.execute("INSERT INTO platform_users(id,email,recovery_email,status,challenge_id) VALUES (?,?,?,'provisioning',?)", (resume_id.bytes, resume_name + "@mail.example.com", resume_name + "@example.net", uuid.UUID(resume_claim["challenge_id"]).bytes))
 start()
 resume_payload = {**resume_claim, "name": resume_name, "password": resume_secret}
 for _ in range(2):
     assert request(BASE + "/api/v1/auth/register", "POST", resume_payload, {"Origin": BASE})[0] == 204
-Actor(resume_name + "@mail.example", resume_secret)
+Actor(resume_name + "@mail.example.com", resume_secret)
 assert len(jmap(service, "x:Account/query", {"filter": {"name": resume_name}})["ids"]) == 1
 print("PASS: lost-create-response durable state resumes the marked mailbox exactly once after restart")
 
@@ -134,7 +134,7 @@ foreign_claim = verified_claim(foreign_name + "@example.net", "registration")
 status, result, _ = request(BASE + "/api/v1/auth/register", "POST", {**foreign_claim, "name": foreign_name, "password": secrets.token_hex(24)}, {"Origin": BASE})
 assert status == 409 and result["code"] == "upstream_address_exists"
 with namespace["database"]() as db:
-    assert db.execute("SELECT count(*) FROM platform_users WHERE email=?", (foreign_name + "@mail.example",)).fetchone()[0] == 0
+    assert db.execute("SELECT count(*) FROM platform_users WHERE email=?", (foreign_name + "@mail.example.com",)).fetchone()[0] == 0
 assert jmap(service, "x:Account/get", {"ids": [foreign_id], "properties": ["id", "description"]})["list"][0]["description"] == "foreign-never-adopt"
 replacement = "replace-" + secrets.token_hex(4)
 assert request(BASE + "/api/v1/auth/register", "POST", {**foreign_claim, "name": replacement, "password": secrets.token_hex(24)}, {"Origin": BASE})[0] == 204
@@ -158,7 +158,7 @@ for _ in range(50):
 subprocess.run(["docker", "stop", "mail-web-app-test"], check=True, stdout=subprocess.DEVNULL)
 with sqlite3.connect(ROOT / "data/db/mail-web.sqlite") as db:
     # Advance only this disposable fixture's lease rather than waiting 3 minutes.
-    db.execute("UPDATE platform_users SET provisioning_lease=0 WHERE email=? AND status='provisioning'", (outage_name + "@mail.example",))
+    db.execute("UPDATE platform_users SET provisioning_lease=0 WHERE email=? AND status='provisioning'", (outage_name + "@mail.example.com",))
 start()
 assert request(BASE + "/api/v1/auth/register", "POST", outage_payload, {"Origin": BASE})[0] == 204
 assert len(jmap(service, "x:Account/query", {"filter": {"name": outage_name}})["ids"]) == 1
@@ -186,7 +186,7 @@ assert request(BASE + "/api/v1/auth/recovery", "POST", {**fresh_reset_claim, "pa
 actor = Actor(actor.email, reset_password)
 print("PASS: recovery outage revokes sessions and requires a fresh verification claim; no password is queued")
 
-admin = Actor("operator-v2@mail.example", (ROOT / "secrets/operator.initial-password").read_text().strip())
+admin = Actor("operator-v2@mail.example.com", (ROOT / "secrets/operator.initial-password").read_text().strip())
 managed = next(item for item in admin.api("/admin/users")["items"] if item["email"] == actor.email)
 limits = {"quota_bytes": 1073741824, "hourly_recipients": 10, "daily_recipients": 50}
 admin.api("/admin/users/" + managed["id"], "PATCH", {**limits, "enabled": False}, expected=202)

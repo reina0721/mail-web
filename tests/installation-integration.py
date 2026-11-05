@@ -77,7 +77,7 @@ try:
     assert request("/installation/config")[0] == 401
     assert request("/installation/config", capability="0" * 64)[0] == 401
     service_key = (SOURCE / "secrets/provisioning.key").read_text().strip()
-    settings = {"brand": "Independent Test Mail", "domain": "mail.example", "publicOrigin": ORIGIN,
+    settings = {"brand": "Independent Test Mail", "domain": "mail.example.com", "publicOrigin": ORIGIN,
                 "stalwartUrl": "http://mail-web-stalwart-test:8080", "provisioningKey": service_key}
     assert request("/installation/config", "PUT", settings, capability, "https://attacker.example")[0] == 403
     wrong_domain = dict(settings, domain="not-configured.example")
@@ -88,16 +88,16 @@ try:
     assert service_key.encode() not in (ROOT / "config/runtime.enc").read_bytes()
     current = restart_after_save()
     assert current["configured"] and current["instanceId"] != initial["instanceId"]
-    assert current["brand"] == settings["brand"] and current["domain"] == "mail.example"
+    assert current["brand"] == settings["brand"] and current["domain"] == "mail.example.com"
     code, view = request("/installation/config", capability=capability)
     assert code == 200 and view["provisioningKeySet"] and not view["settings"].get("provisioningKey")
     password = (SOURCE / "secrets/operator.initial-password").read_text().strip()
-    assert request("/installation/operator", "POST", {"email": "operator-v2@mail.example", "password": password,
+    assert request("/installation/operator", "POST", {"email": "operator-v2@mail.example.com", "password": password,
                    "recovery": "installation-recovery@example.net"}, capability)[0] == 204
     assert request("/installation")[1]["needsOperator"] is False
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
-    assert request("/auth/login", "POST", {"email": "operator-v2@mail.example", "password": password}, opener=opener)[0] == 204
+    assert request("/auth/login", "POST", {"email": "operator-v2@mail.example.com", "password": password}, opener=opener)[0] == 204
     csrf = next(cookie.value for cookie in jar if cookie.name == "mail_csrf")
     assert request("/installation/config", opener=opener)[0] == 200
     event_stream = opener.open(ORIGIN + "/api/v1/events", timeout=20)
