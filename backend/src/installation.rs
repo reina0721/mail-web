@@ -422,14 +422,7 @@ pub(super) async fn enroll_operator(
         )
         .await?;
     let item = &info["list"][0];
-    let privileged = item["permissions"]["enabledPermissions"]
-        .as_object()
-        .is_some_and(|permissions| {
-            permissions
-                .iter()
-                .any(|(name, value)| name.starts_with("sys") && value == true)
-        });
-    if privileged
+    if privileged_permissions(item)
         || item["roles"]["@type"] != "User"
         || item["domainId"] != app.services.domain_id
         || item["name"].as_str() != email.split('@').next()
@@ -446,6 +439,22 @@ pub(super) async fn enroll_operator(
     Ok(StatusCode::NO_CONTENT)
 }
 
+fn privileged_permissions(item: &Value) -> bool {
+    // Stalwart also names ordinary self-service permissions sysApiKey* and
+    // sysAccountPassword*. Reject directory/system administration, while
+    // retaining the existing mail-only account permission contract.
+    let ordinary = account::user_permissions(true);
+    item["permissions"]["enabledPermissions"]
+        .as_object()
+        .is_some_and(|permissions| {
+            permissions.iter().any(|(name, value)| {
+                name.starts_with("sys")
+                    && value == true
+                    && ordinary["enabledPermissions"][name] != true
+            })
+        })
+}
+
 fn maintenance_matches(stored: &str, candidate: &str) -> bool {
     stored.trim().len() == 64
         && candidate.len() == 64
@@ -458,6 +467,14 @@ fn maintenance_matches(stored: &str, candidate: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ordinary_self_service_is_not_directory_administration() {
+        let ordinary = serde_json::json!({"permissions": crate::account::user_permissions(true)});
+        assert!(!super::privileged_permissions(&ordinary));
+        let mut service = ordinary;
+        service["permissions"]["enabledPermissions"]["sysAccountCreate"] = serde_json::json!(true);
+        assert!(super::privileged_permissions(&service));
+    }
     use super::*;
     use axum::{body::Body, http::Request};
     use tower::ServiceExt;
