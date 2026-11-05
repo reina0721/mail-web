@@ -245,9 +245,9 @@ pub(crate) async fn capabilities(
 }
 #[derive(Deserialize, ToSchema)]
 pub(super) struct ProfileInput {
-    display_name: String,
-    language: String,
-    theme: String,
+    display_name: Option<String>,
+    language: Option<String>,
+    theme: Option<String>,
 }
 #[utoipa::path(patch,path="/api/v1/account",request_body=ProfileInput,responses((status=200,body=Value),(status=204,description="Completed"),(status=401,description="Session required"),(status=403,description="Denied")))]
 pub(super) async fn update_profile(
@@ -257,18 +257,45 @@ pub(super) async fn update_profile(
 ) -> Result<StatusCode> {
     let me = identity(&app, &headers, true).await?;
     let app = connections::for_user(&app, me.user).await?;
-    if input.display_name.chars().count() > 100
-        || !matches!(input.language.as_str(), "zh-CN" | "en")
-        || !matches!(input.theme.as_str(), "system" | "light" | "dark")
+    if input
+        .display_name
+        .as_ref()
+        .is_some_and(|name| name.chars().count() > 100)
+        || input
+            .language
+            .as_deref()
+            .is_some_and(|value| !matches!(value, "zh-CN" | "en"))
+        || input
+            .theme
+            .as_deref()
+            .is_some_and(|value| !matches!(value, "system" | "light" | "dark"))
     {
         return Err(Error(StatusCode::BAD_REQUEST, "profile_invalid"));
     }
-    db::query(db::Statement::AccountUpdateProfileUpdatePlatformUsers)
-        .bind(input.display_name)
-        .bind(json!({"language":input.language,"theme":input.theme}).to_string())
+    let mut tx = db::begin(&app.db).await?;
+    let old = db::query(db::Statement::AccountProfileSelectPlatformUsers)
         .bind(me.user)
-        .execute(&app.db)
+        .fetch_one(&mut *tx)
         .await?;
+    let mut preferences: Value = serde_json::from_str(&old.get::<String, _>("preferences"))
+        .map_err(|_| internal("profile_invalid"))?;
+    if let Some(language) = input.language {
+        preferences["language"] = json!(language);
+    }
+    if let Some(theme) = input.theme {
+        preferences["theme"] = json!(theme);
+    }
+    db::query(db::Statement::AccountUpdateProfileUpdatePlatformUsers)
+        .bind(
+            input
+                .display_name
+                .unwrap_or_else(|| old.get("display_name")),
+        )
+        .bind(preferences.to_string())
+        .bind(me.user)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
 }
 #[derive(Deserialize, ToSchema)]

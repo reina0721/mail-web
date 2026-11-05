@@ -968,9 +968,9 @@ export interface components {
             new_password: string;
         };
         ProfileInput: {
-            display_name: string;
-            language: string;
-            theme: string;
+            display_name?: string | null;
+            language?: string | null;
+            theme?: string | null;
         };
         PublicRegistrationPolicy: {
             /** Format: int64 */

@@ -170,3 +170,5 @@
 
 .admin-header-controls{display:flex;align-items:center;gap:12px;flex:0 1 360px;min-width:0}.admin-domain-filter{flex:1;min-width:0}
 @media(max-width:767px){.admin-page-heading{flex-wrap:wrap}.admin-header-controls{flex-basis:100%}}
+
+.connection-selector{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px}.connection-domain{border-top:1px solid var(--ds-border);padding-top:20px;display:grid;gap:12px;min-width:0}.connection-domain h3{font-size:16px;font-weight:650}.registration-readiness,.connection-advanced{display:grid;gap:12px;min-width:0}.registration-readiness h2{font-size:15px}.registration-readiness .installation-actions{justify-content:flex-start}.site-summary{gap:12px}.installation-shell p{overflow-wrap:anywhere}@media(max-width:767px){.connection-selector{grid-template-columns:minmax(0,1fr)}.connection-selector>button{justify-self:start}}

@@ -2408,20 +2408,24 @@
       },
       "ProfileInput": {
         "type": "object",
-        "required": [
-          "display_name",
-          "language",
-          "theme"
-        ],
         "properties": {
           "display_name": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "language": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "theme": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

@@ -124,7 +124,7 @@ docker("run", "-d", "--pull", "never", "--name", SECOND, "--init", "--network", 
     "-v", str(ROOT / "stalwart/etc") + ":/etc/stalwart", "-v", str(ROOT / "stalwart/data") + ":/var/lib/stalwart", "stalwartlabs/stalwart:v1.0.1-alpine")
 try:
     wait("http://127.0.0.1:19081/healthz/live")
-    rpc(19081, admin_b, "x:Bootstrap/set", {"update": {"singleton": {"defaultHostname": "mx.second.example", "defaultDomain": "second.example", "requestTlsCertificate": False, "generateDkimKeys": False, "tracer": {"@type": "Stdout", "ansi": False}}}})
+    rpc(19081, admin_b, "x:Bootstrap/set", {"update": {"singleton": {"defaultHostname": "mx.second.example.com", "defaultDomain": "second.example.com", "requestTlsCertificate": False, "generateDkimKeys": False, "tracer": {"@type": "Stdout", "ansi": False}}}})
     docker("restart", SECOND)
     wait("http://127.0.0.1:19081/healthz/live")
     env = (SOURCE / "app.env").read_text().replace("PUBLIC_ORIGIN=http://mail-web:8080", "PUBLIC_ORIGIN=" + ORIGIN)
@@ -153,7 +153,7 @@ try:
     scoped = lambda name: path + name + "?serviceId=" + service_id
     grant = api(scoped("authorize"), "POST", {"base": UPSTREAM, "username": "bootstrap", "password": password_b})[0]
     assert not grant["missingPermissions"]
-    spec = {"brand": "Mail Web", "domain": "second.example", "publicOrigin": ORIGIN, "createDomain": False, "operatorMode": "existing", "operatorEmail": "", "recoveryEmail": "", "cloudflareAccount": ""}
+    spec = {"brand": "Mail Web", "domain": "second.example.com", "publicOrigin": ORIGIN, "createDomain": False, "operatorMode": "existing", "operatorEmail": "", "recoveryEmail": "", "cloudflareAccount": ""}
     body = {"ticket": grant["ticket"], "spec": spec}
     api(path + "preflight", "POST", body, expected=401)  # Cannot spend B's grant on A.
     api(scoped("preflight"), "POST", body)
@@ -186,7 +186,7 @@ try:
             break
     assert remote_b == remote_a, "Could not exercise a real upstream-ID collision"
     rpc(19081, admin_b, "x:Account/set", {"update": {remote_b: {"name": local_name}}})
-    email_b = local_name + "@second.example"
+    email_b = local_name + "@second.example.com"
     login(email_b, password, 401)  # Real upstream account alone is not sufficient.
     docker("stop", NAME)
     user_b = uuid.uuid4()
@@ -225,13 +225,19 @@ try:
     assert api("/messages/" + saved[0], cookie=actor_a)[0]["subject"] == "Server A"
     assert api("/messages/" + saved[1], cookie=actor_b)[0]["subject"] == "Server B"
     assert api("/account/usage", cookie=actor_b)[0]["quotaBytes"] == 134217728
+    assert api("/account/capabilities", cookie=actor_b)[0]["appPasswords"]
+    api("/account", "PATCH", {"display_name": "Source B"}, actor_b, 204)
+    api("/account", "PATCH", {"theme": "dark"}, actor_b, 204)
+    profile_b = api("/account", cookie=actor_b)[0]
+    assert profile_b["displayName"] == "Source B" and profile_b["preferences"]["theme"] == "dark"
+    assert api("/account", cookie=actor_a)[0]["displayName"] != "Source B"
     print("PASS: equal real upstream IDs and names, local enrollment boundary, mail/drafts/quotas/admin/session isolation")
 
     # An additional domain reuses this connection's runtime keys and Hook.
-    rpc(19081, admin_b, "x:Domain/set", {"create": {"extra": {"name": "extra.second.example"}}})
-    api("/installation/connections", "POST", {"id": service_id, "name": "Second real server", "origin": UPSTREAM, "settings": {}, "domains": ["second.example", "extra.second.example"]})
+    rpc(19081, admin_b, "x:Domain/set", {"create": {"extra": {"name": "extra.second.example.com"}}})
+    api("/installation/connections", "POST", {"id": service_id, "name": "Second real server", "origin": UPSTREAM, "settings": {}, "domains": ["second.example.com", "extra.second.example.com"]})
     domains = api("/registration/domains")[0]["items"]
-    assert {d["domain"] for d in domains} >= {"mail.example.com", "second.example", "extra.second.example"}
+    assert {d["domain"] for d in domains} >= {"mail.example.com", "second.example.com", "extra.second.example.com"}
     assert "stalwart" not in json.dumps(domains).lower()
     report = api("/installation/readiness?domainId=" + domain_b, "POST")[0]
     assert all(item["status"] == "passed" for item in report["items"]), report
@@ -249,9 +255,9 @@ try:
     assert not api("/admin/registration", cookie=actor_a)[0]["policy"]["enabled"]
     assert api("/admin/registration?domainId=" + domain_b, cookie=actor_a)[0]["policy"]["enabled"]
     print("PASS: per-domain policy and real dependency checks, fail-closed before fixture human verification, A unchanged")
-    extra = next(d["id"] for d in rpc(19081, admin_b, "x:Domain/get", {"properties": ["id", "name"]})["list"] if d["name"] == "extra.second.example")
+    extra = next(d["id"] for d in rpc(19081, admin_b, "x:Domain/get", {"properties": ["id", "name"]})["list"] if d["name"] == "extra.second.example.com")
     create_account(19081, admin_b, extra, "receiver", secrets.token_hex(24), permissions)
-    target = "receiver@extra.second.example"
+    target = "receiver@extra.second.example.com"
     submission = {"idempotency_key": str(uuid.uuid4()), "draft": {"to": [target], "cc": [], "bcc": [], "subject": "B quota", "text": "Real second server JMAP", "attachments": []}}
     assert api("/submissions", "POST", submission, actor_b)[0]["status"] == "submitted"
     ip = docker("inspect", "--format", '{{(index .NetworkSettings.Networks "mail-web-test").IPAddress}}', SECOND)

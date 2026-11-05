@@ -86,7 +86,7 @@ http.createServer(async(req,res)=>{try{
   }
   if(key==='/auth/session')return json(res,{id:'operator',email:'operator@example.com',operator:mode.operator});
   if(key==='/auth/logout'){mode.expired=true;return json(res,{});}
-  if(key==='/account'){if(req.method==='PATCH'){mode.profileName=input.display_name;mode.theme=input.theme;}return json(res,{email:'operator@example.com',displayName:mode.profileName??'运营团队',quotaBytes:1073741824,usedBytes:104857600,preferences:{theme:mode.theme}});}
+  if(key==='/account'){if(req.method==='PATCH'){if(input.display_name!==undefined)mode.profileName=input.display_name;if(input.theme!==undefined)mode.theme=input.theme;}return json(res,{email:'operator@example.com',displayName:mode.profileName??'运营团队',quotaBytes:1073741824,usedBytes:104857600,preferences:{theme:mode.theme}});}
   if(key==='/account/usage')return json(res,{usedBytes:104857600,quotaBytes:1073741824});
   if(key==='/account/capabilities')return json(res,{changePassword:true,appPasswords:true});
   if(key==='/auth/sessions')return json(res,{items:[{id:'preview-current',current:true,lastSeen:Date.now()},{id:'preview-other',current:false,lastSeen:Date.now()-60000}]});
