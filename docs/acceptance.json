@@ -3,7 +3,7 @@
   "evidenceScope": {
     "historicalProductionRelease": "v0.1.0-alpha.3",
     "candidateRelease": "v0.2.0-alpha.6",
-    "candidateStatus": "Automatic initialization candidate. Workflow 42043604233 passed the real Basic/API-key, existing/new domain and operator, callback activation and idempotence suites; final alpha.6 adds narrow runtime-key permissions, concurrent-edit guards and final UI checks. Release acceptance pending final workflow."
+    "candidateStatus": "Accepted prerelease: workflow 42047213713 passed frontend build/contracts, 23 backend tests, isolated Basic/API-key automatic installation, interrupted/lost-key-response recovery, scoped credential metadata, full platform/identity regression and published artifact installation/restore. Live webmail1 CLI update to alpha.6 preserved exact encrypted configuration and platform account mappings. Cloudflare live creation awaits an owner-supplied Token."
   },
   "verifiedInIsolatedStalwart101": [
     "Real user credentials, mailbox login and operator isolation",
@@ -35,7 +35,8 @@
     "Production Turnstile token verification through the final HTTPS origin",
     "Broader screen-reader and browser/device accessibility coverage",
     "Public-origin signup including an actual Turnstile token and externally delivered verification code",
-    "Real Cloudflare API-token widget creation for this deployment; requires an owner-supplied account-scoped Token"
+    "Real Cloudflare API-token widget creation for this deployment; requires an owner-supplied account-scoped Token",
+    "Current ordinary operator sign-in using the historical local credential handoff did not succeed before this update; no password reset was performed, and live panel verification used the installation capability"
   ],
   "verifiedInGenericDeployment": [
     "Fresh artifact-only installation in a user-selected directory, custom container name and explicit IP/port binding",
@@ -46,6 +47,8 @@
     "Consistent snapshots saved before and after the update; all application bind mounts remain below the selected directory; original seven containers retained their IDs",
     "Real JMAP text/plain fallback retains paragraphs and literal angle-bracket addresses; standard folders display inbox first",
     "Guided alpha.5 configuration automatically reads saved website origin and secrets-present flags; domain, account, Hook and schema queries succeeded against the existing production Stalwart; advertised domain and API-key deep links verified in the real panel",
-    "Artifact-only CLI update from alpha.4 to alpha.5 preserved the exact encrypted runtime configuration, encryption key and existing session; original seven container IDs unchanged"
+    "Artifact-only CLI update from alpha.4 to alpha.5 preserved the exact encrypted runtime configuration, encryption key and existing session; original seven container IDs unchanged",
+    "Automatic alpha.6 deployed using the existing artifact-only CLI; before/after consistent snapshots show identical platform-user mappings and exact pre-update encrypted runtime configuration",
+    "Actual automatic configuration panel verified through the installation capability at 1440x900 and 390x844; stored branding, mailbox domain and real public origin retained; bootstrap administrator and Cloudflare fields empty"
   ]
 }
