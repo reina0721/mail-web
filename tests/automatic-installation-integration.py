@@ -222,7 +222,7 @@ def exercise(mode):
             with urllib.request.urlopen(req) as response:
                 values = json.load(response)["methodResponses"][0][1]["list"]
             credential = next(k for k in values if k["id"] == job["resources"][kind + "Key"])
-            assert credential["permissions"]["@type"] == "Replace"
+            assert credential["permissions"]["@type"] == ("Inherit" if kind == "directory" else "Replace")
             assert len(values) == 1, "An unreachable orphan API key was not reconciled"
         # Same operation cannot create a second set of resources after completion.
         code, reauthorized = request(path + "authorize", "POST", credentials, capability, spec["publicOrigin"])

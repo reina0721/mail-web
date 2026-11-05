@@ -248,12 +248,13 @@ async fn service(
                 )
                 .await?;
         }
+        // Stalwart requires a manager to hold every permission of the users it
+        // updates. Inherit the dedicated non-admin User identity plus its explicit
+        // directory permissions; do not inherit the bootstrap administrator.
         let key_permissions = if kind == "directory" {
-            let mut enabled = permissions["enabledPermissions"].clone();
-            enabled["authenticate"] = json!(true);
-            json!({"@type":"Replace","enabledPermissions":enabled})
+            json!({"@type":"Inherit"})
         } else {
-            json!({"@type":"Replace","enabledPermissions":{"authenticate":true,"emailSend":true,"jmapMailboxGet":true,"jmapEmailCreate":true,"jmapIdentityGet":true,"jmapEmailSubmissionCreate":true}})
+            json!({"@type":"Replace","permissions":{"authenticate":true,"emailSend":true,"jmapMailboxGet":true,"jmapEmailCreate":true,"jmapIdentityGet":true,"jmapEmailSubmissionCreate":true}})
         };
         let value = upstream
             .password_call(
